@@ -139,29 +139,36 @@ echo "════════════════════════�
 MODULE_DIR="$AUDACITY_SRC/modules/plugin-manager/mod-plugin-manager"
 mkdir -p "$MODULE_DIR"
 
-# Map from our flat storage to the proper source tree
-declare -A FILE_MAP=(
-  ["PluginManagerModule.h"]="modules__plugin-manager__mod-plugin-manager__PluginManagerModule.h"
-  ["PluginManagerModule.cpp"]="modules__plugin-manager__mod-plugin-manager__PluginManagerModule.cpp"
-  ["PluginManagerPanel.h"]="modules__plugin-manager__mod-plugin-manager__PluginManagerPanel.h"
-  ["PluginManagerPanel.cpp"]="modules__plugin-manager__mod-plugin-manager__PluginManagerPanel.cpp"
-  ["PluginCache.h"]="modules__plugin-manager__mod-plugin-manager__PluginCache.h"
-  ["PluginCache.cpp"]="modules__plugin-manager__mod-plugin-manager__PluginCache.cpp"
-  ["PluginValidator.h"]="modules__plugin-manager__mod-plugin-manager__PluginValidator.h"
-  ["PluginValidator.cpp"]="modules__plugin-manager__mod-plugin-manager__PluginValidator.cpp"
-  ["HgeEffectBrowser.h"]="HgeEffectBrowser.h"
-  ["HgeEffectBrowser.cpp"]="HgeEffectBrowser.cpp"
-  ["HgeEffectModule.h"]="HgeEffectModule.h"
-  ["HgeEffectModule.cpp"]="HgeEffectModule.cpp"
-  ["CMakeLists.txt"]="modules__plugin-manager__mod-plugin-manager__CMakeLists.txt"
-)
+# Map from our flat storage to the proper source tree.
+# Using parallel indexed arrays for bash 3.x compatibility.
+FILE_SRC=()
+FILE_DST=()
 
-for dest_name in "${!FILE_MAP[@]}"; do
-  src_file="$MODULE_SRC/${FILE_MAP[$dest_name]}"
-  dest_file="$MODULE_DIR/$dest_name"
+add_file() {
+  FILE_SRC[${#FILE_SRC[@]}]="$1"
+  FILE_DST[${#FILE_DST[@]}]="$2"
+}
+
+add_file "modules__plugin-manager__mod-plugin-manager__PluginManagerModule.h" "PluginManagerModule.h"
+add_file "modules__plugin-manager__mod-plugin-manager__PluginManagerModule.cpp" "PluginManagerModule.cpp"
+add_file "modules__plugin-manager__mod-plugin-manager__PluginManagerPanel.h" "PluginManagerPanel.h"
+add_file "modules__plugin-manager__mod-plugin-manager__PluginManagerPanel.cpp" "PluginManagerPanel.cpp"
+add_file "modules__plugin-manager__mod-plugin-manager__PluginCache.h" "PluginCache.h"
+add_file "modules__plugin-manager__mod-plugin-manager__PluginCache.cpp" "PluginCache.cpp"
+add_file "modules__plugin-manager__mod-plugin-manager__PluginValidator.h" "PluginValidator.h"
+add_file "modules__plugin-manager__mod-plugin-manager__PluginValidator.cpp" "PluginValidator.cpp"
+add_file "HgeEffectBrowser.h" "HgeEffectBrowser.h"
+add_file "HgeEffectBrowser.cpp" "HgeEffectBrowser.cpp"
+add_file "HgeEffectModule.h" "HgeEffectModule.h"
+add_file "HgeEffectModule.cpp" "HgeEffectModule.cpp"
+add_file "modules__plugin-manager__mod-plugin-manager__CMakeLists.txt" "CMakeLists.txt"
+
+for ((i=0; i<${#FILE_SRC[@]}; i++)); do
+  src_file="$MODULE_SRC/${FILE_SRC[$i]}"
+  dest_file="$MODULE_DIR/${FILE_DST[$i]}"
   if [ -f "$src_file" ]; then
     cp "$src_file" "$dest_file"
-    echo "  ✅ $dest_name"
+    echo "  ✅ ${FILE_DST[$i]}"
   else
     echo "  ⚠️  Missing: $src_file"
   fi
@@ -195,13 +202,30 @@ mkdir -p "$BUILD_DIR"
 if [ "$SCRIPT_MODE" == "quick" ]; then
   echo "  ⚡ Quick mode: skipping Conan (using cached deps)"
 else
-  echo "  📦 Running Conan..."
-  CONAN_FLAGS="-s build_type=Release"
-  if [ "$SCRIPT_MODE" != "no-vst3" ]; then
-    CONAN_FLAGS="$CONAN_FLAGS -o vst3sdk=True"
+  # Check if Conan is installed
+  if ! command -v conan &>/dev/null; then
+    echo "  ❌ Conan package manager not found!"
+    echo ""
+    echo "     Install Conan with:"
+    echo "     pip install --user conan==1.64"
+    echo ""
+    echo "     Or if you don't have pip:"
+    echo "     python3 -m pip install --user conan==1.64"
+    echo ""
+    echo "     After installing, verify:"
+    echo "     conan --version"
+    echo ""
+    echo "  ⚡ Falling back to quick mode (skipping Conan)..."
+    echo "  ⚡ CMake may fail if dependencies aren't cached."
+  else
+    echo "  📦 Running Conan..."
+    CONAN_FLAGS="-s build_type=Release"
+    if [ "$SCRIPT_MODE" != "no-vst3" ]; then
+      CONAN_FLAGS="$CONAN_FLAGS -o vst3sdk=True"
+    fi
+    conan install . --build=missing $CONAN_FLAGS 2>&1 | sed 's/^/     /'
+    echo "  ✅ Conan complete"
   fi
-  conan install . --build=missing $CONAN_FLAGS 2>&1 | sed 's/^/     /'
-  echo "  ✅ Conan complete"
 fi
 
 # ── Step 4: CMake configuration ───────────────────────────────────────────
