@@ -74,61 +74,120 @@ echo "════════════════════════�
 echo "  STEP 1: Apply source patches"
 echo "═══════════════════════════════════════════════════════════════"
 
+# Generate a portable Python patcher script (avoids macOS sed/quotas/attr issues)
+PY_PATCHER="/tmp/hge_patcher.py"
+cat > "$PY_PATCHER" << 'PYEOF'
+import os, sys, tempfile
+
+def safe_write(path, content):
+    """Write file via temp + atomic replace to bypass macOS provenance restrictions."""
+    fd, tmp = tempfile.mkstemp(dir=os.path.dirname(path), prefix='.hge_patch_')
+    try:
+        with os.fdopen(fd, 'w') as f:
+            f.write(content)
+        os.replace(tmp, path)
+    except:
+        if os.path.exists(tmp):
+            os.unlink(tmp)
+        raise
+
+def patch_wrapper(src):
+    if not os.path.isfile(src):
+        print(f"  ⚠️  Wrapper.c not found: {src}")
+        return False
+    with open(src, 'r') as f:
+        content = f.read()
+    if 'VST_PATH' in content:
+        print("  ✅ Wrapper.c VST_PATH patch already applied")
+        return True
+    block = (
+        '  // HGE: Set VST_PATH and LV2_PATH for bundled plugins\n'
+        '  {\n'
+        '    size_t path_len = strlen(path);\n'
+        '    char *res_dir = alloca(path_len + 32);\n'
+        '    strcpy(res_dir, path);\n'
+        '    char *p = strrchr(res_dir, \'/\');\n'
+        '    if (p) strcpy(p, "/..");\n'
+        '\n'
+        '    char plugins_dir[1024];\n'
+        '    snprintf(plugins_dir, sizeof(plugins_dir), "%s/Plug-Ins", res_dir);\n'
+        '    setenv("VST_PATH", plugins_dir, 0);\n'
+        '    setenv("LV2_PATH", plugins_dir, 0);\n'
+        '  }\n'
+    )
+    content = content.replace('  execve(', block + '  execve(', 1)
+    safe_write(src, content)
+    print("  ✅ Wrapper.c patched")
+    return True
+
+def patch_vst3(src):
+    if not os.path.isfile(src):
+        print(f"  ⚠️  VST3EffectsModule.cpp not found: {src}")
+        return False
+    with open(src, 'r') as f:
+        content = f.read()
+    if 'VST3_PATH' in content:
+        print("  ✅ VST3_PATH patch already applied")
+        return True
+    if '#include <wx/tokenzr.h>' not in content:
+        content = content.replace(
+            '#include <wx/utils.h>',
+            '#include <wx/tokenzr.h>\n#include <wx/utils.h>', 1
+        )
+    block = (
+        '\n  // HGE: Support VST3_PATH env var for bundled VST3 plugins\n'
+        '  {\n'
+        '     wxString vst3path;\n'
+        '     if (wxGetEnv(wxT("VST3_PATH"), &vst3path) && !vst3path.empty())\n'
+        '     {\n'
+        '        wxStringTokenizer tok(vst3path, wxPATH_SEP);\n'
+        '        while (tok.HasMoreTokens())\n'
+        '           pathList.push_back(tok.GetNextToken());\n'
+        '     }\n'
+        '  }\n'
+    )
+    marker = '// Check for VST3_PATH environment variable'
+    if marker in content:
+        content = content.replace(marker, block + '  ' + marker, 1)
+    else:
+        content = content.replace(
+            '#include <wx/tokenzr.h>',
+            '#include <wx/tokenzr.h>\n' + block, 1
+        )
+    safe_write(src, content)
+    print("  ✅ VST3_PATH patched")
+    return True
+
+if __name__ == '__main__':
+    cmd = sys.argv[1] if len(sys.argv) > 1 else ''
+    path = sys.argv[2] if len(sys.argv) > 2 else ''
+    if cmd == 'wrapper':
+        patch_wrapper(path)
+    elif cmd == 'vst3':
+        patch_vst3(path)
+    else:
+        print(f"Usage: {sys.argv[0]} <wrapper|vst3> <path>")
+        sys.exit(1)
+PYEOF
+
+# Strip macOS provenance attribute if present (blocks in-place edits on Sequoia)
+for f in "$AUDACITY_SRC/mac/Wrapper.c" "$AUDACITY_SRC/libraries/lib-vst3/VST3EffectsModule.cpp"; do
+  if [ -f "$f" ]; then
+    xattr -d com.apple.provenance "$f" 2>/dev/null || true
+  fi
+done
+
 # Patch 1: Wrapper.c — VST_PATH + LV2_PATH env vars
 WRAPPER_SRC="$AUDACITY_SRC/mac/Wrapper.c"
-if grep -q "VST_PATH" "$WRAPPER_SRC" 2>/dev/null; then
-  echo "  ✅ Wrapper.c VST_PATH patch already applied"
-else
-  echo "  📝 Applying Wrapper.c patch..."
-  # Find the execve call and add VST_PATH/LV2_PATH before it
-  cat > /tmp/wrapper_patch.c << 'WRAPPERPATCH'
-  // HGE: Set VST_PATH and LV2_PATH for bundled plugins
-  {
-    size_t path_len = strlen(path);
-    char *res_dir = alloca(path_len + 32);
-    strcpy(res_dir, path);
-    char *p = strrchr(res_dir, '/');
-    if (p) strcpy(p, "/..");
-
-    char plugins_dir[1024];
-    snprintf(plugins_dir, sizeof(plugins_dir), "%s/Plug-Ins", res_dir);
-    setenv("VST_PATH", plugins_dir, 0);
-    setenv("LV2_PATH", plugins_dir, 0);
-  }
-WRAPPERPATCH
-  # Insert before execve
-  sed -i '' '/^[[:space:]]*execve(/{
-    r /tmp/wrapper_patch.c
-  }' "$WRAPPER_SRC"
-  echo "  ✅ Wrapper.c patched"
-fi
+python3 "$PY_PATCHER" wrapper "$WRAPPER_SRC" 2>&1 | sed 's/^/  /'
 
 # Patch 2: VST3EffectsModule.cpp — VST3_PATH env var support
 if [ "$SCRIPT_MODE" != "no-vst3" ]; then
   VST3_MODULE="$AUDACITY_SRC/libraries/lib-vst3/VST3EffectsModule.cpp"
-  if grep -q "VST3_PATH" "$VST3_MODULE" 2>/dev/null; then
-    echo "  ✅ VST3_PATH patch already applied"
-  else
-    echo "  📝 Applying VST3_PATH patch..."
-    # Add wx/tokenzr.h include
-    sed -i '' 's/#include <wx\/utils.h>/#include <wx\/tokenzr.h>\n#include <wx\/utils.h>/' "$VST3_MODULE"
-    # Add VST3_PATH scanning in FindModulePaths after existing path gathering
-    sed -i '' '/\/\/ Check for VST3_PATH environment variable/{
-      a\
-      \  // HGE: Support VST3_PATH env var for bundled VST3 plugins\
-      \  {\
-      \     wxString vst3path;\
-      \     if (wxGetEnv(wxT("VST3_PATH"), \&vst3path) \&\& !vst3path.empty())\
-      \     {\
-      \        wxStringTokenizer tok(vst3path, wxPATH_SEP);\
-      \        while (tok.HasMoreTokens())\
-      \           pathList.push_back(tok.GetNextToken());\
-      \     }\
-      \  }
-    }' "$VST3_MODULE"
-    echo "  ✅ VST3_PATH patched"
-  fi
+  python3 "$PY_PATCHER" vst3 "$VST3_MODULE" 2>&1 | sed 's/^/  /'
 fi
+
+rm -f "$PY_PATCHER"
 
 # ── Step 2: Install module source files ──────────────────────────────────
 echo ""
@@ -248,26 +307,24 @@ echo "════════════════════════�
 echo "  STEP 4: CMake configuration"
 echo "═══════════════════════════════════════════════════════════════"
 
-CMAKE_FLAGS="-DCMAKE_BUILD_TYPE=Release"
-CMAKE_FLAGS="$CMAKE_FLAGS -Daudacity_has_vst2=ON"
-CMAKE_FLAGS="$CMAKE_FLAGS -Daudacity_has_lv2=ON"
-CMAKE_FLAGS="$CMAKE_FLAGS -Daudacity_has_audiocom=OFF"
-
-# Conan integration — CMake handles Conan internally
-CMAKE_FLAGS="$CMAKE_FLAGS -Daudacity_conan_enabled=ON"
-CMAKE_FLAGS="$CMAKE_FLAGS -Daudacity_conan_allow_prebuilt_binaries=ON"
-CMAKE_FLAGS="$CMAKE_FLAGS -Daudacity_conan_build_profile=$CONAN_PROFILE_DIR/hge-profile"
-CMAKE_FLAGS="$CMAKE_FLAGS -Daudacity_conan_host_profile=$CONAN_PROFILE_DIR/hge-profile"
-
-# Force all dependencies to local (bundled) to avoid system conflicts
-CMAKE_FLAGS="$CMAKE_FLAGS -Daudacity_obey_system_dependencies=OFF"
-CMAKE_FLAGS="$CMAKE_FLAGS -Daudacity_lib_preference=local"
+CMAKE_FLAGS=(
+  -DCMAKE_BUILD_TYPE=Release
+  -Daudacity_has_vst2=ON
+  -Daudacity_has_lv2=ON
+  -Daudacity_has_audiocom=OFF
+  -Daudacity_conan_enabled=ON
+  -Daudacity_conan_allow_prebuilt_binaries=ON
+  -Daudacity_conan_build_profile="${CONAN_PROFILE_DIR}/hge-profile"
+  -Daudacity_conan_host_profile="${CONAN_PROFILE_DIR}/hge-profile"
+  -Daudacity_obey_system_dependencies=OFF
+  -Daudacity_lib_preference=local
+)
 
 if [ "$SCRIPT_MODE" != "no-vst3" ]; then
-  CMAKE_FLAGS="$CMAKE_FLAGS -Daudacity_has_vst3=ON"
+  CMAKE_FLAGS+=( -Daudacity_has_vst3=ON )
   echo "  🔧 VST3: ENABLED"
 else
-  CMAKE_FLAGS="$CMAKE_FLAGS -Daudacity_has_vst3=OFF"
+  CMAKE_FLAGS+=( -Daudacity_has_vst3=OFF )
   echo "  🔧 VST3: DISABLED"
 fi
 
@@ -275,11 +332,11 @@ if [ "$SCRIPT_MODE" == "no-browser" ]; then
   echo "  🔧 Custom browser: DISABLED"
 else
   echo "  🔧 Custom browser: ENABLED"
-  CMAKE_FLAGS="$CMAKE_FLAGS -DHGE_EFFECT_BROWSER=ON"
+  CMAKE_FLAGS+=( -DHGE_EFFECT_BROWSER=ON )
 fi
 
 echo ""
-cmake -S "$AUDACITY_SRC" -B "$BUILD_DIR" -G "Unix Makefiles" $CMAKE_FLAGS \
+cmake -S "$AUDACITY_SRC" -B "$BUILD_DIR" -G "Unix Makefiles" "${CMAKE_FLAGS[@]}" \
   2>&1 | sed 's/^/     /'
 
 echo "  ✅ CMake configured"
