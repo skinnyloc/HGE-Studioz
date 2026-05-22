@@ -179,12 +179,29 @@ done
 
 # Patch 1: Wrapper.c — VST_PATH + LV2_PATH env vars
 WRAPPER_SRC="$AUDACITY_SRC/mac/Wrapper.c"
-python3 "$PY_PATCHER" wrapper "$WRAPPER_SRC" 2>&1 | sed 's/^/  /'
+python3 "$PY_PATCHER" wrapper "$WRAPPER_SRC" 2>&1 | sed 's/^/  /' || {
+  # Fallback: copy, patch the copy, copy back (bypasses provenance attr)
+  echo "  ⚠️  Python patch failed, trying cp-based fallback..."
+  TMPFILE=$(mktemp)
+  cp "$WRAPPER_SRC" "$TMPFILE"
+  python3 "$PY_PATCHER" wrapper "$TMPFILE" 2>&1 | sed 's/^/  /'
+  cp "$TMPFILE" "$WRAPPER_SRC"
+  rm -f "$TMPFILE"
+  echo "  ✅ Wrapper.c patched (cp fallback)"
+}
 
 # Patch 2: VST3EffectsModule.cpp — VST3_PATH env var support
 if [ "$SCRIPT_MODE" != "no-vst3" ]; then
   VST3_MODULE="$AUDACITY_SRC/libraries/lib-vst3/VST3EffectsModule.cpp"
-  python3 "$PY_PATCHER" vst3 "$VST3_MODULE" 2>&1 | sed 's/^/  /'
+  python3 "$PY_PATCHER" vst3 "$VST3_MODULE" 2>&1 | sed 's/^/  /' || {
+    echo "  ⚠️  Python patch failed, trying cp-based fallback..."
+    TMPFILE=$(mktemp)
+    cp "$VST3_MODULE" "$TMPFILE"
+    python3 "$PY_PATCHER" vst3 "$TMPFILE" 2>&1 | sed 's/^/  /'
+    cp "$TMPFILE" "$VST3_MODULE"
+    rm -f "$TMPFILE"
+    echo "  ✅ VST3_PATH patched (cp fallback)"
+  }
 fi
 
 rm -f "$PY_PATCHER"
@@ -277,30 +294,6 @@ echo "  ✅ CMake:    $(cmake --version 2>&1 | head -1)"
 echo "  ✅ Compiler: $(/usr/bin/cc --version 2>&1 | head -1)"
 echo ""
 
-# Generate minimal Conan profile if Apple Clang 21 isn't recognized
-CONAN_PROFILE_DIR="$BUILD_DIR/conan"
-mkdir -p "$CONAN_PROFILE_DIR"
-
-PROFILE_FILE="$CONAN_PROFILE_DIR/hge-profile"
-if [ ! -f "$PROFILE_FILE" ]; then
-  echo "  📝 Generating Conan profile for Apple Clang 21 compatibility..."
-  cat > "$PROFILE_FILE" << 'CONANPROFILE'
-[settings]
-os=Macos
-os_build=Macos
-arch=armv8
-arch_build=armv8
-compiler=apple-clang
-compiler.version=15
-compiler.libcxx=libc++
-build_type=Release
-[options]
-[build_requires]
-[env]
-CONANPROFILE
-  echo "  ✅ Profile created: $PROFILE_FILE"
-fi
-
 # ── Step 4: CMake configuration ───────────────────────────────────────────
 echo ""
 echo "═══════════════════════════════════════════════════════════════"
@@ -314,8 +307,7 @@ CMAKE_FLAGS=(
   -Daudacity_has_audiocom=OFF
   -Daudacity_conan_enabled=ON
   -Daudacity_conan_allow_prebuilt_binaries=ON
-  -Daudacity_conan_build_profile="${CONAN_PROFILE_DIR}/hge-profile"
-  -Daudacity_conan_host_profile="${CONAN_PROFILE_DIR}/hge-profile"
+  # No custom profiles — conan_runner.py auto-generates them with correct Clang version
   -Daudacity_obey_system_dependencies=OFF
   -Daudacity_lib_preference=local
 )
