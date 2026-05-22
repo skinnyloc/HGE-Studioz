@@ -1,0 +1,7 @@
+// OLD:
+class MODULE_MANAGER_API PluginManager final
+// END OLD
+// NEW:
+// HGE: test access
+class MODULE_MANAGER_API PluginManager final
+// END NEW

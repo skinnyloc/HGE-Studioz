@@ -1,0 +1,21 @@
+// OLD:
+set( FOLDERS
+   etc
+   import-export
+   track-ui
+   scripting
+   nyquist
+   sharing
+)
+// END OLD
+// NEW:
+set( FOLDERS
+   etc
+   import-export
+   track-ui
+   scripting
+   nyquist
+   sharing
+   plugin-manager
+)
+// END NEW

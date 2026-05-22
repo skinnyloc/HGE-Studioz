@@ -1,0 +1,13 @@
+// OLD:
+#include <wx/stdpaths.h>
+#include <wx/dir.h>
+#include <wx/log.h>
+#include <wx/utils.h>
+// END OLD
+// NEW:
+#include <wx/stdpaths.h>
+#include <wx/dir.h>
+#include <wx/log.h>
+#include <wx/tokenzr.h>
+#include <wx/utils.h>
+// END NEW

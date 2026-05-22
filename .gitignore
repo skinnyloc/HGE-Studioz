@@ -1,0 +1,36 @@
+# HGE Music Studio — Git Ignore
+#
+# Keep: source code, scripts, docs, config
+# Ignore: build artifacts, binaries, DMGs, IDE files
+
+# App bundle (compiled binary, frameworks, plugins)
+*.app/
+*.app
+
+# DMG installers
+*.dmg
+
+# macOS artifacts
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Build directories
+build-*/
+cmake-build-*/
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Cache and temp
+*.pyc
+__pycache__/
+.env

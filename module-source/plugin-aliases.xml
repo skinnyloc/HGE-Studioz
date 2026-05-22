@@ -1,0 +1,62 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  HGE Music Studio — Plugin Aliases Configuration
+  Maps internal plugin names to consumer-friendly display names.
+  Loaded by PluginDisplayName system at startup.
+-->
+<PluginAliases>
+  <!-- ═══════════════════════════════════════════════════════════════
+       VST2 Bundled Plugins
+       ═══════════════════════════════════════════════════════════════ -->
+  <Alias internal="TDR Nova"             display="TDR EQ"                hge="true"/>
+  <Alias internal="TDR Kotelnikov"       display="TDR Compressor"        hge="true"/>
+  <Alias internal="Saturation Knob"      display="Saturation Knob"       hge="true"/>
+  <Alias internal="SSQ"                  display="SSQ"                   hge="true"/>
+
+  <!-- ═══════════════════════════════════════════════════════════════
+       Nyquist Scripts → Category Mapped Names
+       ═══════════════════════════════════════════════════════════════ -->
+  <!-- EQ -->
+  <Alias internal="SpectralEditParametricEQ" display="Spectral EQ"       hge="false"/>
+  <Alias internal="SpectralEditShelves"      display="Spectral Shelves"  hge="false"/>
+  <Alias internal="ShelfFilter"              display="Shelf Filter"      hge="false"/>
+  <Alias internal="highpass"                 display="High Pass Filter"  hge="false"/>
+  <Alias internal="lowpass"                  display="Low Pass Filter"   hge="false"/>
+  <Alias internal="notch"                    display="Notch Filter"      hge="false"/>
+
+  <!-- Dynamics -->
+  <Alias internal="noisegate"                display="Noise Gate"        hge="false"/>
+  <Alias internal="legacy-limiter"           display="Legacy Limiter"    hge="false"/>
+  <Alias internal="crossfadeclips"           display="Crossfade Clips"   hge="false"/>
+  <Alias internal="crossfadetracks"          display="Crossfade Tracks"  hge="false"/>
+  <Alias internal="StudioFadeOut"            display="Studio Fade Out"   hge="false"/>
+  <Alias internal="adjustable-fade"          display="Adjustable Fade"   hge="false"/>
+  <Alias internal="clipfix"                  display="Clip Fix"          hge="false"/>
+
+  <!-- Mastering -->
+  <Alias internal="rms"                      display="RMS Analyzer"      hge="false"/>
+  <Alias internal="limiter"                  display="Limiter"           hge="false"/>
+  <Alias internal="hardlimiter"              display="Hard Limiter"      hge="false"/>
+
+  <!-- Reverb & Delay -->
+  <Alias internal="delay"                    display="Delay"             hge="false"/>
+  <Alias internal="tremolo"                  display="Tremolo"           hge="false"/>
+
+  <!-- Utility -->
+  <Alias internal="beat"                     display="Beat"              hge="false"/>
+  <Alias internal="pluck"                    display="Pluck"             hge="false"/>
+  <Alias internal="rhythmtrack"              display="Rhythm Track"      hge="false"/>
+  <Alias internal="rissetdrum"               display="Risset Drum"       hge="false"/>
+  <Alias internal="vocoder"                  display="Vocoder"           hge="false"/>
+  <Alias internal="equalabel"                display="Label Sounds"      hge="false"/>
+  <Alias internal="label-sounds"             display="Label Sounds"      hge="false"/>
+  <Alias internal="sample-data-export"       display="Sample Export"     hge="false"/>
+  <Alias internal="sample-data-import"       display="Sample Import"     hge="false"/>
+
+  <!-- Spectral (Legacy) -->
+  <Alias internal="SpectralEditMulti"        display="Spectral Editor"   hge="false"/>
+  <Alias internal="spectral-delete"          display="Spectral Delete"   hge="false" hidden="true"/>
+
+  <!-- Hidden Utilities -->
+  <Alias internal="nyquist-plug-in-installer" display="Plugin Installer" hge="false" hidden="true"/>
+</PluginAliases>

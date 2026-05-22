@@ -1,0 +1,11 @@
+#[[
+HGE Music Studio — Production Plugin Manager Module
+Self-contained plugin discovery, caching, validation, and quarantine system.
+All bundled plugins are auto-detected at startup with zero user configuration.
+]]
+
+set( MODULES
+   mod-plugin-manager
+)
+
+audacity_module_subdirectory( "${MODULES}" )

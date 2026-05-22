@@ -1,0 +1,27 @@
+#[[
+mod-plugin-manager — HGE Music Studio Plugin Management Module
+]]
+
+set( SOURCES
+   PluginManagerModule.cpp
+   PluginCache.cpp
+   PluginValidator.cpp
+   PluginManagerPanel.cpp
+   HgeEffectBrowser.cpp
+   HgeEffectModule.cpp
+)
+
+set( HEADERS
+   PluginManagerModule.h
+   PluginCache.h
+   PluginValidator.h
+   PluginManagerPanel.h
+   HgeEffectBrowser.h
+   HgeEffectModule.h
+)
+
+audacity_module(
+   NAME mod-plugin-manager
+   SOURCES ${SOURCES}
+   HEADERS ${HEADERS}
+)

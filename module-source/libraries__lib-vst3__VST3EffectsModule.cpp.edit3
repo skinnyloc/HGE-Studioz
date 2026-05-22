@@ -1,0 +1,32 @@
+// OLD:
+PluginPaths
+VST3EffectsModule::FindModulePaths(PluginManagerInterface &pluginManager)
+{
+   //Note: The host recursively scans these folders at startup in this order (User/Global/Application).
+   //https://developer.steinberg.help/display/VST/Plug-in+Locations
+
+   FilePaths pathList;
+// END OLD
+// NEW:
+PluginPaths
+VST3EffectsModule::FindModulePaths(PluginManagerInterface &pluginManager)
+{
+   //Note: The host recursively scans these folders at startup in this order (User/Global/Application).
+   //https://developer.steinberg.help/display/VST/Plug-in+Locations
+
+   FilePaths pathList;
+
+   // Support VST3_PATH env var for bundled/internal plugins
+   // (mirrors how VST2 uses VST_PATH — enables self-contained app bundles)
+   {
+      wxString vst3path;
+      if (wxGetEnv(wxT("VST3_PATH"), &vst3path) && !vst3path.empty())
+      {
+         wxStringTokenizer tok(vst3path, wxPATH_SEP);
+         while (tok.HasMoreTokens())
+         {
+            pathList.push_back(tok.GetNextToken());
+         }
+      }
+   }
+// END NEW

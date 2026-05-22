@@ -1,0 +1,63 @@
+// OLD:
+   if (!getenv("AUDACITY_PRESERVE_LIBRARY_PATH")) {
+      unsetenv("DYLD_LIBRARY_PATH");
+   }
+
+   // Set VST_PATH to include plugins bundled inside the app bundle
+   // This makes bundled VST plugins discoverable without system-wide install
+   {
+      size_t path_len = strlen(path);
+      char *vst_path = alloca(path_len + sizeof("/../Plug-Ins"));
+      strcpy(vst_path, path);
+      char *slash = strrchr(vst_path, '/');
+      if (slash) {
+         strcpy(slash, "/../Plug-Ins");
+      }
+      setenv("VST_PATH", vst_path, 0);
+   }
+
+   execve(path, argv, environ);
+// END OLD
+// NEW:
+   if (!getenv("AUDACITY_PRESERVE_LIBRARY_PATH")) {
+      unsetenv("DYLD_LIBRARY_PATH");
+   }
+
+   // ================================================================
+   // Self-Contained Plugin Architecture
+   // ================================================================
+   // All bundled plugins live inside the app bundle so DMG installs
+   // work instantly with zero setup, symlinks, or terminal commands.
+   //
+   // Plugin format → bundle location         → discovery method
+   // ───────────────────────────────────────────────────────────
+   // VST2  (.vst)   Contents/Plug-Ins/       VST_PATH env var
+   // VST3  (.vst3)  Contents/VST3/           built-in bundle scan
+   // LV2   (.lv2)   Contents/Plug-Ins/       LV2_PATH env var
+   // AU    (.comp)  ~/Library/Audio/Plug-Ins auto first-launch copy
+   // Nyquist (.ny)  Contents/plug-ins/       built-in Nyquist scan
+   // ================================================================
+   {
+      // Derive the Resources directory from argv[0]
+      // argv[0] is .../Contents/MacOS/Wrapper
+      // We want .../Contents/
+      size_t path_len = strlen(path);
+      char *res_dir  = alloca(path_len + 32);
+      strcpy(res_dir, path);
+      char *p = strrchr(res_dir, '/');
+      if (p) {
+         strcpy(p, "/..");
+      }
+
+      char plugins_dir[1024];
+      snprintf(plugins_dir, sizeof(plugins_dir), "%s/Plug-Ins", res_dir);
+
+      // VST2: set VST_PATH so lib-vst scans our bundled .vst bundles
+      setenv("VST_PATH", plugins_dir, 0);
+
+      // LV2: set LV2_PATH so lib-lv2 finds our bundled .lv2 bundles
+      setenv("LV2_PATH", plugins_dir, 0);
+   }
+
+   execve(path, argv, environ);
+// END NEW

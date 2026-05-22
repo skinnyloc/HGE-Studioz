@@ -1,0 +1,27 @@
+// OLD:
+   if (!getenv("AUDACITY_PRESERVE_LIBRARY_PATH")) {
+      unsetenv("DYLD_LIBRARY_PATH");
+   }
+
+   execve(path, argv, environ);
+// END OLD
+// NEW:
+   if (!getenv("AUDACITY_PRESERVE_LIBRARY_PATH")) {
+      unsetenv("DYLD_LIBRARY_PATH");
+   }
+
+   // Set VST_PATH to include plugins bundled inside the app bundle
+   // This makes bundled VST plugins discoverable without system-wide install
+   {
+      size_t path_len = strlen(path);
+      char *vst_path = alloca(path_len + sizeof("/../Plug-Ins"));
+      strcpy(vst_path, path);
+      char *slash = strrchr(vst_path, '/');
+      if (slash) {
+         strcpy(slash, "/../Plug-Ins");
+      }
+      setenv("VST_PATH", vst_path, 0);
+   }
+
+   execve(path, argv, environ);
+// END NEW
