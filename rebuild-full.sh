@@ -219,7 +219,8 @@ else
     echo "  ⚡ CMake may fail if dependencies aren't cached."
   else
     echo "  📦 Running Conan..."
-    CONAN_FLAGS="-s build_type=Release"
+    # Apple Clang 21 not recognized by Conan 1.64 — shim to v15
+    CONAN_FLAGS="-s build_type=Release -s compiler=apple-clang -s compiler.version=15 -s compiler.libcxx=libc++"
     if [ "$SCRIPT_MODE" != "no-vst3" ]; then
       CONAN_FLAGS="$CONAN_FLAGS -o vst3sdk=True"
     fi
