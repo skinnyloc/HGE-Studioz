@@ -190,43 +190,56 @@ cp "$MODULE_SRC/PluginCategoryManager.cpp" "$LIBSRC/" 2>/dev/null || true
 cp "$MODULE_SRC/PluginDisplayName.h" "$LIBSRC/" 2>/dev/null || true
 cp "$MODULE_SRC/PluginDisplayName.cpp" "$LIBSRC/" 2>/dev/null || true
 
-# ── Step 3: Conan dependencies ────────────────────────────────────────────
+# ── Step 3: Verify build environment ─────────────────────────────────────
 echo ""
 echo "═══════════════════════════════════════════════════════════════"
-echo "  STEP 3: Install dependencies"
+echo "  STEP 3: Verify build environment"
 echo "═══════════════════════════════════════════════════════════════"
 
 cd "$AUDACITY_SRC"
 mkdir -p "$BUILD_DIR"
 
-if [ "$SCRIPT_MODE" == "quick" ]; then
-  echo "  ⚡ Quick mode: skipping Conan (using cached deps)"
-else
-  # Check if Conan is installed
-  if ! command -v conan &>/dev/null; then
-    echo "  ❌ Conan package manager not found!"
-    echo ""
-    echo "     Install Conan with:"
-    echo "     pip install --user conan==1.64"
-    echo ""
-    echo "     Or if you don't have pip:"
-    echo "     python3 -m pip install --user conan==1.64"
-    echo ""
-    echo "     After installing, verify:"
-    echo "     conan --version"
-    echo ""
-    echo "  ⚡ Falling back to quick mode (skipping Conan)..."
-    echo "  ⚡ CMake may fail if dependencies aren't cached."
-  else
-    echo "  📦 Running Conan..."
-    # Apple Clang 21 not recognized by Conan 1.64 — shim to v15
-    CONAN_FLAGS="-s build_type=Release -s compiler=apple-clang -s compiler.version=15 -s compiler.libcxx=libc++"
-    if [ "$SCRIPT_MODE" != "no-vst3" ]; then
-      CONAN_FLAGS="$CONAN_FLAGS -o vst3sdk=True"
-    fi
-    conan install . --build=missing $CONAN_FLAGS 2>&1 | sed 's/^/     /'
-    echo "  ✅ Conan complete"
-  fi
+# Check for Conan — CMake handles Conan internally via audacity_conan_enabled
+echo "  🔍 Checking build tools..."
+if ! command -v conan &>/dev/null; then
+  echo "  ❌ Conan package manager not found!"
+  echo ""
+  echo "     This build requires Conan for dependency management."
+  echo "     Install it with:"
+  echo "     python3 -m pip install --user conan==1.64"
+  echo ""
+  echo "  ⚠️  Build cannot proceed without Conan."
+  exit 1
+fi
+
+# Show versions
+echo "  ✅ Conan:    $(conan --version 2>&1)"
+echo "  ✅ CMake:    $(cmake --version 2>&1 | head -1)"
+echo "  ✅ Compiler: $(/usr/bin/cc --version 2>&1 | head -1)"
+echo ""
+
+# Generate minimal Conan profile if Apple Clang 21 isn't recognized
+CONAN_PROFILE_DIR="$BUILD_DIR/conan"
+mkdir -p "$CONAN_PROFILE_DIR"
+
+PROFILE_FILE="$CONAN_PROFILE_DIR/hge-profile"
+if [ ! -f "$PROFILE_FILE" ]; then
+  echo "  📝 Generating Conan profile for Apple Clang 21 compatibility..."
+  cat > "$PROFILE_FILE" << 'CONANPROFILE'
+[settings]
+os=Macos
+os_build=Macos
+arch=armv8
+arch_build=armv8
+compiler=apple-clang
+compiler.version=15
+compiler.libcxx=libc++
+build_type=Release
+[options]
+[build_requires]
+[env]
+CONANPROFILE
+  echo "  ✅ Profile created: $PROFILE_FILE"
 fi
 
 # ── Step 4: CMake configuration ───────────────────────────────────────────
@@ -239,6 +252,16 @@ CMAKE_FLAGS="-DCMAKE_BUILD_TYPE=Release"
 CMAKE_FLAGS="$CMAKE_FLAGS -Daudacity_has_vst2=ON"
 CMAKE_FLAGS="$CMAKE_FLAGS -Daudacity_has_lv2=ON"
 CMAKE_FLAGS="$CMAKE_FLAGS -Daudacity_has_audiocom=OFF"
+
+# Conan integration — CMake handles Conan internally
+CMAKE_FLAGS="$CMAKE_FLAGS -Daudacity_conan_enabled=ON"
+CMAKE_FLAGS="$CMAKE_FLAGS -Daudacity_conan_allow_prebuilt_binaries=ON"
+CMAKE_FLAGS="$CMAKE_FLAGS -Daudacity_conan_build_profile=$CONAN_PROFILE_DIR/hge-profile"
+CMAKE_FLAGS="$CMAKE_FLAGS -Daudacity_conan_host_profile=$CONAN_PROFILE_DIR/hge-profile"
+
+# Force all dependencies to local (bundled) to avoid system conflicts
+CMAKE_FLAGS="$CMAKE_FLAGS -Daudacity_obey_system_dependencies=OFF"
+CMAKE_FLAGS="$CMAKE_FLAGS -Daudacity_lib_preference=local"
 
 if [ "$SCRIPT_MODE" != "no-vst3" ]; then
   CMAKE_FLAGS="$CMAKE_FLAGS -Daudacity_has_vst3=ON"
