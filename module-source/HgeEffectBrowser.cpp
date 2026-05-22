@@ -57,6 +57,7 @@
 #include <wx/msgdlg.h>
 #include <wx/settings.h>
 #include <wx/sizer.h>
+#include <wx/stdpaths.h>
 #include <wx/statbox.h>
 #include <wx/statline.h>
 #include <wx/timer.h>
@@ -66,7 +67,28 @@
 #include "PluginManager.h"
 #include "CommandManager.h"
 #include "PluginDescriptor.h"
-#include "PluginDisplayName.h"
+#include "../../../libraries/lib-plugin-display/PluginDisplayName.h"
+
+namespace {
+
+wxString HgeEffectDescription(const wxString &category)
+{
+   if (category == wxT("EQ"))
+      return wxT("Shape tone, remove mud, and clean up vocals or instruments.");
+   if (category == wxT("Compressors"))
+      return wxT("Control dynamics and keep vocals, drums, and beats consistent.");
+   if (category == wxT("Analog"))
+      return wxT("Add warmth, saturation, and analog-style color.");
+   if (category == wxT("Pitch Correction"))
+      return wxT("Tune vocals and create modern pitch-correction effects.");
+   if (category == wxT("Reverb & Delay"))
+      return wxT("Add space, depth, echoes, and ambience.");
+   if (category == wxT("Mastering"))
+      return wxT("Finish tracks with loudness, limiting, and final polish.");
+   return wxT("Utility effect for cleanup, analysis, editing, or creative sound design.");
+}
+
+}
 
 // ─── Color Constants ──────────────────────────────────────────────────────
 
@@ -82,7 +104,6 @@ BEGIN_EVENT_TABLE(HgeEffectBrowser, wxDialog)
    EVT_LIST_ITEM_SELECTED(wxID_ANY, HgeEffectBrowser::OnPluginSelected)
    EVT_LIST_ITEM_ACTIVATED(wxID_ANY, HgeEffectBrowser::OnPluginActivated)
    EVT_LISTBOX(wxID_ANY, HgeEffectBrowser::OnCategorySelected)
-   EVT_BUTTON(wxID_ANY, HgeEffectBrowser::OnApplyEffect)
    EVT_SEARCHCTRL_SEARCH_BTN(wxID_ANY, HgeEffectBrowser::OnSearch)
    EVT_TEXT(wxID_ANY, HgeEffectBrowser::OnSearch)
    EVT_TIMER(wxID_ANY, HgeEffectBrowser::OnSearchTimer)
@@ -100,9 +121,10 @@ HgeEffectBrowser::HgeEffectBrowser(wxWindow *parent)
 {
    // Initialize category definitions
    mCategories = {
-      {"__all__",    " All Plugins",       "⚡"},
+      {"__all__",    " All Effects",       "⚡"},
       {"EQ",         " EQ",                "🎛"},
-      {"Dynamics",   " Dynamics",          "📊"},
+      {"Compressors", " Compressors",       "▣"},
+      {"Analog",     " Analog",            "◉"},
       {"Pitch Correction", " Pitch Corr.",  "🎤"},
       {"Reverb & Delay",   " Reverb & Delay", "⏳"},
       {"Mastering",  " Mastering",         "🎚"},
@@ -114,11 +136,28 @@ HgeEffectBrowser::HgeEffectBrowser(wxWindow *parent)
    // Load data from PluginCategoryManager
    auto &catMgr = PluginCategoryManager::Get();
    catMgr.LoadBuiltinCategories();
-   mAllPlugins = catMgr.GetAllPlugins();
+   mAllPlugins.clear();
+   for (const auto &category : catMgr.GetVisibleCategoryNames())
+   {
+      for (const auto &name : catMgr.GetPluginsInCategory(category))
+      {
+         const auto info = catMgr.GetCategory(name);
+         if (!info.isVisible)
+            continue;
+         mAllPlugins.push_back({
+            name,
+            info.category,
+            info.displayName,
+            HgeEffectDescription(info.category),
+            info.sortOrder,
+            info.isHgeCertified
+         });
+      }
+   }
 
    // Sort by category order
    std::sort(mAllPlugins.begin(), mAllPlugins.end(),
-      [](const PluginEntry &a, const PluginEntry &b) {
+      [](const BrowserPluginEntry &a, const BrowserPluginEntry &b) {
          if (a.category != b.category)
             return a.sortOrder < b.sortOrder;
          return a.displayName < b.displayName;
@@ -139,10 +178,7 @@ HgeEffectBrowser::HgeEffectBrowser(wxWindow *parent)
 HgeEffectBrowser::~HgeEffectBrowser()
 {
    // Save favorites and recent state
-   auto &catMgr = PluginCategoryManager::Get();
-   wxString statePath = wxStandardPaths::Get().GetUserDataDir()
-                       + wxFILE_SEP_PATH + wxT("plugin-state.json");
-   catMgr.SaveState(statePath.ToStdString());
+   PluginCategoryManager::Get().SaveState();
 }
 
 // ─── UI Construction ──────────────────────────────────────────────────────
@@ -270,10 +306,12 @@ void HgeEffectBrowser::BuildDetailPanel(wxWindow *parent, wxBoxSizer *topSizer)
    mApplyBtn = new wxButton(mDetailPanel, wxID_ANY, wxT("Apply Effect"));
    mApplyBtn->SetDefault();
    mApplyBtn->Enable(false);
+   mApplyBtn->Bind(wxEVT_BUTTON, &HgeEffectBrowser::OnApplyEffect, this);
    detailSizer->Add(mApplyBtn, 0, wxALIGN_CENTER_VERTICAL | wxRIGHT, 5);
 
    mFavBtn = new wxButton(mDetailPanel, wxID_ANY, wxT("☆ Favorite"));
    mFavBtn->Enable(false);
+   mFavBtn->Bind(wxEVT_BUTTON, &HgeEffectBrowser::OnToggleFavorite, this);
    detailSizer->Add(mFavBtn, 0, wxALIGN_CENTER_VERTICAL);
 
    mDetailPanel->SetSizer(detailSizer);
@@ -305,15 +343,14 @@ void HgeEffectBrowser::PopulateCategories()
       }
       else
       {
-         auto plugins = PluginCategoryManager::Get().GetPluginsByCategory(cat.id);
-         count = plugins.size();
+         count = 0;
+         for (const auto &plugin : mAllPlugins)
+            if (plugin.category == cat.id)
+               ++count;
       }
 
       wxString label;
-      if (cat.id == "__all__" || cat.id == "__fav__" || cat.id == "__recent__")
-         label = wxString::FromUTF8(cat.icon + " " + cat.label);
-      else
-         label = wxString::FromUTF8(cat.icon + cat.label);
+      label = cat.icon + wxT(" ") + cat.label;
 
       label += wxString::Format(wxT("  (%d)"), count);
       mCategoryList->Append(label);
@@ -323,29 +360,38 @@ void HgeEffectBrowser::PopulateCategories()
    mCategoryList->SetSelection(0);
 }
 
-void HgeEffectBrowser::PopulatePlugins(const std::string &category)
+void HgeEffectBrowser::PopulatePlugins(const wxString &category)
 {
    mPluginList->DeleteAllItems();
    mFilteredPlugins.clear();
    mCurrentCategory = category;
 
-   std::vector<PluginEntry> plugins;
+   std::vector<BrowserPluginEntry> plugins;
 
-   if (category == "__all__")
+   if (category == wxT("__all__"))
    {
       plugins = mAllPlugins;
    }
-   else if (category == "__fav__")
+   else if (category == wxT("__fav__"))
    {
-      plugins = PluginCategoryManager::Get().GetStarredPlugins();
+      const auto starred = PluginCategoryManager::Get().GetStarredPlugins();
+      for (const auto &plugin : mAllPlugins)
+         if (std::find(starred.begin(), starred.end(), plugin.internalName) != starred.end())
+            plugins.push_back(plugin);
    }
-   else if (category == "__recent__")
+   else if (category == wxT("__recent__"))
    {
-      plugins = PluginCategoryManager::Get().GetRecentPlugins(25);
+      const auto recent = PluginCategoryManager::Get().GetRecentPlugins(25);
+      for (const auto &name : recent)
+         for (const auto &plugin : mAllPlugins)
+            if (plugin.internalName == name)
+               plugins.push_back(plugin);
    }
    else
    {
-      plugins = PluginCategoryManager::Get().GetPluginsByCategory(category);
+      for (const auto &plugin : mAllPlugins)
+         if (plugin.category == category)
+            plugins.push_back(plugin);
    }
 
    // Apply search filter if active
@@ -354,7 +400,12 @@ void HgeEffectBrowser::PopulatePlugins(const std::string &category)
       wxString query = mSearchCtrl->GetValue();
       if (!query.IsEmpty())
       {
-         plugins = PluginCategoryManager::Get().Search(query.ToStdString());
+         plugins.clear();
+         const auto matches = PluginCategoryManager::Get().Search(query);
+         for (const auto &name : matches)
+            for (const auto &plugin : mAllPlugins)
+               if (plugin.internalName == name)
+                  plugins.push_back(plugin);
       }
    }
 
@@ -368,7 +419,7 @@ void HgeEffectBrowser::PopulatePlugins(const std::string &category)
       mPluginList->SetItem(idx, 0, starred ? wxT("★") : wxT("☆"));
       
       // Name column
-      mPluginList->SetItem(idx, 1, wxString::FromUTF8(p.displayName));
+      mPluginList->SetItem(idx, 1, p.displayName);
       
       // HGE Certified badge
       mPluginList->SetItem(idx, 2,
@@ -378,7 +429,7 @@ void HgeEffectBrowser::PopulatePlugins(const std::string &category)
       mPluginList->SetItem(idx, 3, wxT("Apply"));
 
       // Store pointer to plugin entry for lookup
-      PluginEntry *entry = new PluginEntry(p);
+      auto *entry = new BrowserPluginEntry(p);
       mPluginList->SetItemData(idx, reinterpret_cast<long>(entry));
       mFilteredPlugins.push_back(p);
    }
@@ -413,7 +464,7 @@ void HgeEffectBrowser::OnPluginActivated(wxListEvent &evt)
    long idx = evt.GetIndex();
    if (idx < 0) return;
 
-   PluginEntry *entry = reinterpret_cast<PluginEntry *>(
+   auto *entry = reinterpret_cast<BrowserPluginEntry *>(
       mPluginList->GetItemData(idx));
    if (!entry) return;
 
@@ -429,7 +480,7 @@ void HgeEffectBrowser::OnPluginSelected(wxListEvent &evt)
    long idx = evt.GetIndex();
    if (idx < 0) { ClearDetails(); return; }
 
-   PluginEntry *entry = reinterpret_cast<PluginEntry *>(
+   auto *entry = reinterpret_cast<BrowserPluginEntry *>(
       mPluginList->GetItemData(idx));
    if (entry)
    {
@@ -479,7 +530,7 @@ void HgeEffectBrowser::OnSearchTimer(wxTimerEvent &WXUNUSED(evt))
    }
    else
    {
-      PopulatePlugins("__all__");
+      PopulatePlugins(wxT("__all__"));
    }
 }
 
@@ -490,18 +541,17 @@ void HgeEffectBrowser::OnClose(wxCommandEvent &WXUNUSED(evt))
 
 // ─── Effect Application ───────────────────────────────────────────────────
 
-bool HgeEffectBrowser::ApplyEffectById(const std::string &pluginId)
+bool HgeEffectBrowser::ApplyEffectById(const wxString &pluginId)
 {
    // Look up the command ID for this plugin
-   std::string commandId = FindPluginCommandId(pluginId);
+   wxString commandId = FindPluginCommandId(pluginId);
    if (commandId.empty())
    {
       wxMessageBox(
          wxString::Format(wxT("Could not find effect: %s\n\n")
                           wxT("The plugin may need to be rescanned.\n")
-                          wxT("Use the stock Effects menu as fallback:\n")
-                          wxT("  Effect → AU → %s"),
-                          pluginId, pluginId),
+                          wxT("The original effect engine is still available as fallback."),
+                          pluginId),
          wxT("Effect Not Found"),
          wxOK | wxICON_INFORMATION, this);
       return false;
@@ -527,7 +577,7 @@ bool HgeEffectBrowser::ApplyEffectById(const std::string &pluginId)
    return true;
 }
 
-std::string HgeEffectBrowser::FindPluginCommandId(const std::string &internalName) const
+wxString HgeEffectBrowser::FindPluginCommandId(const wxString &internalName) const
 {
    // Search the app's plugin registry for a matching plugin
    // The registry stores plugins with command IDs that follow patterns:
@@ -541,23 +591,21 @@ std::string HgeEffectBrowser::FindPluginCommandId(const std::string &internalNam
    // We search by internal name across all registered plugins
 
    auto &pluginManager = PluginManager::Get();
-   const auto &reg = pluginManager.GetRegistry();
-
    // Search all registered plugins
-   for (const auto &[id, desc] : reg)
+   for (const auto &desc : pluginManager.AllPlugins())
    {
       // Check if the plugin's name matches
       wxString pluginName = desc.GetSymbol().Internal();
-      if (pluginName.Lower() == wxString(internalName).Lower())
+      if (pluginName.Lower() == internalName.Lower())
       {
-         return id;
+         return pluginManager.GetCommandIdentifier(desc.GetID());
       }
 
       // Also check display name
       pluginName = desc.GetName();
-      if (pluginName.Lower() == wxString(internalName).Lower())
+      if (pluginName.Lower() == internalName.Lower())
       {
-         return id;
+         return pluginManager.GetCommandIdentifier(desc.GetID());
       }
 
       // Check vendor-prefixed name (e.g., "Tokyo Dawn Labs: TDR Nova")
@@ -565,37 +613,39 @@ std::string HgeEffectBrowser::FindPluginCommandId(const std::string &internalNam
       if (!vendorName.IsEmpty())
       {
          wxString fullName = vendorName + wxT(": ") + desc.GetName();
-         if (fullName.Lower() == wxString(internalName).Lower())
+         if (fullName.Lower() == internalName.Lower())
          {
-            return id;
+            return pluginManager.GetCommandIdentifier(desc.GetID());
          }
       }
    }
 
    // If not found by exact match, try to match just the name part
    // (after stripping vendor prefix)
-   for (const auto &[id, desc] : reg)
+   for (const auto &desc : pluginManager.AllPlugins())
    {
       wxString name = desc.GetName();
-      if (name.Lower().find(wxString(internalName).Lower()) != wxString::npos)
+      if (name.Lower().find(internalName.Lower()) != wxString::npos)
       {
-         return id;
+         return pluginManager.GetCommandIdentifier(desc.GetID());
       }
    }
 
-   return "";
+   return wxEmptyString;
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────
 
-void HgeEffectBrowser::ShowPluginDetails(const PluginEntry *entry)
+void HgeEffectBrowser::ShowPluginDetails(const BrowserPluginEntry *entry)
 {
    if (!entry) { ClearDetails(); return; }
 
    mSelectedPlugin = entry->internalName;
 
-   mDetailTitle->SetLabel(wxString::FromUTF8(entry->displayName));
-   mDetailCategory->SetLabel(wxString::FromUTF8(entry->category));
+   mDetailTitle->SetLabel(entry->displayName);
+   mDetailCategory->SetLabel(
+      entry->category + wxT("  •  ") + entry->description +
+      (entry->hgeCertified ? wxT("  •  HGE Certified") : wxT("")));
 
    // Update apply button
    mApplyBtn->Enable(true);
@@ -620,7 +670,7 @@ void HgeEffectBrowser::ClearDetails()
    mFavBtn->Enable(false);
 }
 
-int HgeEffectBrowser::GetCategoryIndex(const std::string &cat) const
+int HgeEffectBrowser::GetCategoryIndex(const wxString &cat) const
 {
    for (size_t i = 0; i < mCategories.size(); i++)
    {

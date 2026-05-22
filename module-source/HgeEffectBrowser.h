@@ -25,6 +25,7 @@
 #include <memory>
 #include <vector>
 #include <string>
+#include <map>
 
 #include <wx/dialog.h>
 #include <wx/panel.h>
@@ -38,7 +39,7 @@
 #include <wx/textctrl.h>
 #include <wx/timer.h>
 
-#include "PluginCategoryManager.h"
+#include "../../../libraries/lib-plugin-curation/PluginCategoryManager.h"
 
 // Forward declarations
 class Effect;
@@ -63,7 +64,7 @@ private:
 
    // Data population
    void PopulateCategories();
-   void PopulatePlugins(const std::string &category);
+   void PopulatePlugins(const wxString &category);
    void UpdateCategoryCounts();
 
    // Event handlers
@@ -77,13 +78,22 @@ private:
    void OnPluginSelected(wxListEvent &evt);
 
    // Effect application
-   bool ApplyEffectById(const std::string &pluginId);
-   std::string FindPluginCommandId(const std::string &internalName) const;
+   bool ApplyEffectById(const wxString &pluginId);
+   wxString FindPluginCommandId(const wxString &internalName) const;
 
    // Helpers
-   void ShowPluginDetails(const PluginEntry *entry);
+   struct BrowserPluginEntry {
+      wxString internalName;
+      wxString category;
+      wxString displayName;
+      wxString description;
+      int sortOrder{};
+      bool hgeCertified{};
+   };
+
+   void ShowPluginDetails(const BrowserPluginEntry *entry);
    void ClearDetails();
-   int  GetCategoryIndex(const std::string &cat) const;
+   int  GetCategoryIndex(const wxString &cat) const;
 
    // UI Controls
    wxSearchCtrl    *mSearchCtrl;
@@ -98,17 +108,17 @@ private:
    wxTimer          mSearchTimer;
 
    // Data
-   std::vector<PluginEntry> mAllPlugins;
-   std::vector<PluginEntry> mFilteredPlugins;
-   std::string              mCurrentCategory;
-   std::string              mSelectedPlugin;
+   std::vector<BrowserPluginEntry> mAllPlugins;
+   std::vector<BrowserPluginEntry> mFilteredPlugins;
+   wxString                 mCurrentCategory;
+   wxString                 mSelectedPlugin;
    bool                     mIsSearching;
 
    // Category display names and icons
    struct CategoryInfo {
-      std::string id;
-      std::string label;
-      std::string icon;  // emoji/unicode for now
+      wxString id;
+      wxString label;
+      wxString icon;
    };
    std::vector<CategoryInfo> mCategories;
 

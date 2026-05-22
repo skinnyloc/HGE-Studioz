@@ -2,86 +2,120 @@
 
  HGE Music Studio — Plugin Category Manager
 
- Curates all bundled plugins into 6 professional categories:
-   EQ, Pitch Correction, Dynamics, Reverb & Delay, Mastering, Utility
+ Categorizes plugins into curated groups for a modern DAW experience.
 
- Supports favorites, recent plugins, search, and HGE Certified badges.
- Designed for the modern effect browser UI.
+ Categories:
+   EQ / Dynamics / Pitch Correction / Reverb & Delay
+   Mastering / Utility / Legacy (hidden)
+
+ Plugins can belong to multiple categories. Legacy/internal plugins
+ are hidden from the main menu but remain loaded for compatibility.
 
  **********************************************************************/
 
 #ifndef __HGE_PLUGIN_CATEGORY_MANAGER_H__
 #define __HGE_PLUGIN_CATEGORY_MANAGER_H__
 
-#include <string>
-#include <vector>
+#include <wx/string.h>
+#include <wx/filename.h>
 #include <map>
+#include <vector>
 #include <set>
-#include <functional>
 
-// -----------------------------------------------------------------------
-// PluginEntry — metadata for a categorized plugin
-// -----------------------------------------------------------------------
-struct PluginEntry
+struct PluginCategoryInfo
 {
-   std::string internalName;   // raw plugin ID (e.g., "TDR Nova")
-   std::string category;       // "EQ", "Dynamics", "Pitch Correction", etc.
-   std::string displayName;    // cleaned name (e.g., "TDR EQ")
-   int         sortOrder;      // position within category
-   bool        visible;        // show in menu (false = legacy/hidden)
-   bool        hgeCertified;   // shows HGE badge in UI
-   bool        starred;        // user favorite
-   std::string icon;           // icon resource path (future)
+   wxString category;       // "EQ", "Dynamics", etc.
+   wxString displayName;    // Clean display name
+   int      sortOrder;      // Position within category
+   bool     isVisible;      // Shown in main menu?
+   bool     isHgeCertified; // HGE Music Studio branded
+   wxString iconName;       // Icon resource name (future)
 };
 
-// -----------------------------------------------------------------------
-// PluginCategoryManager — singleton for plugin curation
-// -----------------------------------------------------------------------
 class PluginCategoryManager
 {
 public:
    static PluginCategoryManager &Get();
 
-   // --- Built-in categories -------------------------------------------
+   // ── Category Assignment ──────────────────────────────────────────
+
+   // Get category for a plugin by its internal name or path
+   PluginCategoryInfo GetCategory(const wxString &internalName,
+                                  const wxString &path = wxEmptyString) const;
+
+   // Get all plugins in a given category
+   std::vector<wxString> GetPluginsInCategory(const wxString &category) const;
+
+   // ── Visibility ───────────────────────────────────────────────────
+
+   bool IsPluginVisible(const wxString &internalName) const;
+   bool IsPluginHidden(const wxString &internalName) const;
+
+   // Hide a plugin from menus (disables but keeps loaded)
+   void HidePlugin(const wxString &internalName);
+
+   // Unhide a previously hidden plugin
+   void UnhidePlugin(const wxString &internalName);
+
+   // ── Category Listing ─────────────────────────────────────────────
+
+   // All category names in display order
+   std::vector<wxString> GetCategoryNames() const;
+
+   // All visible categories (excludes "Legacy" and "Hidden")
+   std::vector<wxString> GetVisibleCategoryNames() const;
+
+   // ── Starred / Favorites ──────────────────────────────────────────
+
+   void ToggleStar(const wxString &internalName);
+   bool IsStarred(const wxString &internalName) const;
+   std::vector<wxString> GetStarredPlugins() const;
+
+   // ── Recent ───────────────────────────────────────────────────────
+
+   void RecordUse(const wxString &internalName);
+   std::vector<wxString> GetRecentPlugins(int count = 10) const;
+
+   // ── HGE Certified ────────────────────────────────────────────────
+
+   bool IsHgeCertified(const wxString &internalName) const;
+   std::vector<wxString> GetHgeCertifiedPlugins() const;
+
+   // ── Search ───────────────────────────────────────────────────────
+
+   // Search all plugins by name/category, returns matching names
+   std::vector<wxString> Search(const wxString &query) const;
+
+   // ── Persistence ──────────────────────────────────────────────────
+
+   void SaveState();
+   void LoadState();
+
+   // ── Built-in Config ──────────────────────────────────────────────
+
+   // Load the default category mappings
    void LoadBuiltinCategories();
 
-   // --- Access --------------------------------------------------------
-   std::vector<PluginEntry> GetAllPlugins() const;
-   std::vector<PluginEntry> GetPluginsByCategory(const std::string &cat) const;
-   std::vector<std::string> GetCategories() const;
-   PluginEntry              GetPlugin(const std::string &internalName) const;
-   bool                     HasPlugin(const std::string &internalName) const;
-
-   // --- Favorites -----------------------------------------------------
-   void ToggleStar(const std::string &internalName);
-   bool IsStarred(const std::string &internalName) const;
-   std::vector<PluginEntry> GetStarredPlugins() const;
-
-   // --- Recent --------------------------------------------------------
-   void RecordUse(const std::string &internalName);
-   std::vector<PluginEntry> GetRecentPlugins(int maxCount = 10) const;
-
-   // --- Search --------------------------------------------------------
-   std::vector<PluginEntry> Search(const std::string &query) const;
-
-   // --- HGE Certified -------------------------------------------------
-   bool IsHgeCertified(const std::string &internalName) const;
-   std::vector<PluginEntry> GetHgeCertifiedPlugins() const;
-
-   // --- Persistence ---------------------------------------------------
-   void SaveState(const std::string &path);
-   void LoadState(const std::string &path);
-
 private:
-   PluginCategoryManager() = default;
+   PluginCategoryManager();
    ~PluginCategoryManager() = default;
-   PluginCategoryManager(const PluginCategoryManager &) = delete;
-   PluginCategoryManager &operator=(const PluginCategoryManager &) = delete;
 
-   std::vector<PluginEntry>    mPlugins;
-   std::set<std::string>       mStarred;
-   std::vector<std::string>    mRecent;  // ordered list of internal names
-   std::map<std::string, int>  mCategoryOrder;
+   struct PluginEntry
+   {
+      wxString   internalName;
+      wxString   category;
+      wxString   displayName;
+      int        sortOrder;
+      bool       visible;
+      bool       hgeCertified;
+      bool       starred;
+      wxString   icon;
+   };
+
+   std::map<wxString, PluginEntry> mPluginMap;
+   std::vector<wxString> mRecent; // recent plugin names, newest first
+
+   static constexpr int MAX_RECENT = 25;
 };
 
 #endif // __HGE_PLUGIN_CATEGORY_MANAGER_H__

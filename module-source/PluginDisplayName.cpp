@@ -1,309 +1,315 @@
 /**********************************************************************
 
- HGE Music Studio — Plugin Display Name System
+ HGE Music Studio — Plugin Display Name System : Implementation
 
- Maps internal plugin names to consumer-friendly display names.
- Eliminates vendor submenus, cleans up path names, and provides
- consistent "HGE Certified" branding across all bundled plugins.
+ Maps raw plugin identifiers to consumer-facing labels and flattens
+ the VST/AU/LV2 menu hierarchy so every plugin appears directly
+ under its format heading without vendor sub-menus.
 
- =========================================================================
- NAME RESOLUTION ORDER
- =========================================================================
- 1. Exact match in alias table          → "TDR Nova" → "TDR EQ"
- 2. Case-insensitive match in table     → "tdr nova" → "TDR EQ"
- 3. Vendor-prefixed check               → "Tokyo Dawn Labs: TDR Nova" → "TDR EQ"
- 4. Path-based name extraction          → "/.../TDR Nova.vst" → "TDR Nova"
- 5. CamelCase splitting                 → "SpectralEditParametricEQ" → "Spectral Edit Parametric EQ"
+ Built-in aliases (loaded at startup):
+   "TDR Nova"       → "TDR EQ"
+   "TDR Nova"       → "TDR EQ"        (VST3 variant)
+   "MAutoPitch"     → "AutoTune"
+   "SaturationKnob" → "Saturation Knob"
 
- =========================================================================
- VENDOR HANDLING
- =========================================================================
- Vendor submenus are disabled (flat menu). Display vendor is the human-readable
- company name (e.g., "Tokyo Dawn Labs" → "TDR"). All vendor nesting is stripped.
-
- =========================================================================
- BUILT-IN ALIASES
- =========================================================================
- See plugin-aliases.xml for the full alias configuration.
- Currently covers all 28 Nyquist scripts + bundled VST2/VST3 plugins.
+ Add more via RegisterAlias() or an external config file.
 
  **********************************************************************/
 
 #include "PluginDisplayName.h"
 
+#include <wx/log.h>
+#include <wx/file.h>
+#include <wx/filename.h>
+#include <wx/txtstrm.h>
+#include <wx/wfstream.h>
+#include <wx/xml/xml.h>
 #include <algorithm>
 #include <cctype>
-#include <map>
-#include <vector>
-#include <sstream>
-#include <fstream>
 
-// ─── Static Data ────────────────────────────────────────────────────────
+// ─── Singleton ──────────────────────────────────────────────────────────
 
-struct AliasEntry
+PluginDisplayName &PluginDisplayName::Get()
 {
-   std::string internal;
-   std::string display;
-   bool        hgeCertified;
-   bool        hidden;
-};
-
-static std::vector<AliasEntry> sAliases;
-static std::set<std::string>   sHiddenVendors;
-static bool sLoaded = false;
-
-// ─── Built-in Aliases ───────────────────────────────────────────────────
-
-static void LoadBuiltinAliasesImpl()
-{
-   // VST2 Bundled
-   sAliases.push_back({"TDR Nova",           "TDR EQ",           true, false});
-   sAliases.push_back({"TDR Kotelnikov",     "TDR Compressor",   true, false});
-   sAliases.push_back({"SaturationKnob",     "Saturation Knob",  true, false});
-   sAliases.push_back({"Saturation Knob",    "Saturation Knob",  true, false});
-   sAliases.push_back({"SSQ",                "SSQ",              true, false});
-
-   // Nyquist — EQ
-   sAliases.push_back({"SpectralEditParametricEQ", "Spectral EQ",    false, false});
-   sAliases.push_back({"SpectralEditShelves",      "Spectral Shelves", false, false});
-   sAliases.push_back({"ShelfFilter",              "Shelf Filter",   false, false});
-   sAliases.push_back({"highpass",                 "High Pass Filter", false, false});
-   sAliases.push_back({"lowpass",                  "Low Pass Filter",  false, false});
-   sAliases.push_back({"notch",                    "Notch Filter",    false, false});
-
-   // Nyquist — Dynamics
-   sAliases.push_back({"noisegate",                "Noise Gate",      false, false});
-   sAliases.push_back({"legacy-limiter",           "Legacy Limiter",  false, false});
-   sAliases.push_back({"crossfadeclips",           "Crossfade Clips", false, false});
-   sAliases.push_back({"crossfadetracks",          "Crossfade Tracks",false, false});
-   sAliases.push_back({"StudioFadeOut",            "Studio Fade Out", false, false});
-   sAliases.push_back({"adjustable-fade",          "Adjustable Fade", false, false});
-   sAliases.push_back({"clipfix",                  "Clip Fix",        false, false});
-
-   // Nyquist — Mastering
-   sAliases.push_back({"rms",                      "RMS Analyzer",    false, false});
-   sAliases.push_back({"limiter",                  "Limiter",         false, false});
-   sAliases.push_back({"hardlimiter",              "Hard Limiter",    false, false});
-
-   // Nyquist — Reverb & Delay
-   sAliases.push_back({"delay",                    "Delay",           false, false});
-   sAliases.push_back({"tremolo",                  "Tremolo",         false, false});
-
-   // Nyquist — Utility
-   sAliases.push_back({"beat",                     "Beat",            false, false});
-   sAliases.push_back({"pluck",                    "Pluck",           false, false});
-   sAliases.push_back({"rhythmtrack",              "Rhythm Track",    false, false});
-   sAliases.push_back({"rissetdrum",               "Risset Drum",     false, false});
-   sAliases.push_back({"vocoder",                  "Vocoder",         false, false});
-   sAliases.push_back({"equalabel",                "Label Sounds",    false, false});
-   sAliases.push_back({"label-sounds",             "Label Sounds",    false, false});
-   sAliases.push_back({"sample-data-export",       "Sample Export",   false, false});
-   sAliases.push_back({"sample-data-import",       "Sample Import",   false, false});
-
-   // Nyquist — Spectral (hidden by default)
-   sAliases.push_back({"SpectralEditMulti",        "Spectral Editor", false, false});
-   sAliases.push_back({"spectral-delete",          "Spectral Delete", false, true});
-
-   // Hidden utilities
-   sAliases.push_back({"nyquist-plug-in-installer","Plugin Installer",false, true});
-
-   // Hide vendor submenus
-   sHiddenVendors.insert("Tokyo Dawn Labs");
-   sHiddenVendors.insert("Softube");
-   sHiddenVendors.insert("MeldaProduction");
-   sHiddenVendors.insert("Audacity");
+   static PluginDisplayName instance;
+   return instance;
 }
 
-// ─── String Helpers ─────────────────────────────────────────────────────
+// ─── Constructor loads built-in aliases ────────────────────────────────
 
-static std::string toLower(const std::string &s)
+PluginDisplayName::PluginDisplayName()
 {
-   std::string r;
-   r.reserve(s.size());
-   for (char c : s) r.push_back(std::tolower(c));
-   return r;
+   LoadBuiltinAliases();
 }
 
-static std::string trim(const std::string &s)
+// ─── Core Lookup ────────────────────────────────────────────────────────
+
+wxString PluginDisplayName::GetDisplayName(
+   const wxString &internalName,
+   const wxString &vendor,
+   const wxString &format) const
 {
-   size_t start = s.find_first_not_of(" \t\r\n");
-   size_t end = s.find_last_not_of(" \t\r\n");
-   if (start == std::string::npos) return "";
-   return s.substr(start, end - start + 1);
-}
+   wxString key = internalName;
 
-static std::string splitCamelCase(const std::string &s)
-{
-   std::string result;
-   for (size_t i = 0; i < s.size(); i++)
-   {
-      if (i > 0 && std::isupper(s[i]) && !std::isupper(s[i-1]))
-         result += ' ';
-      result += s[i];
-   }
-   return result;
-}
-
-static std::string cleanPluginPath(const std::string &path)
-{
-   std::string name = path;
-
-   // Remove directory path
-   auto lastSlash = name.find_last_of("/\\");
-   if (lastSlash != std::string::npos)
-      name = name.substr(lastSlash + 1);
-
-   // Remove extension
-   for (const auto &ext : {".vst3", ".vst", ".component", ".lv2", ".ny", ".dll", ".so"})
-   {
-      if (name.size() >= ext.size() &&
-          name.substr(name.size() - ext.size()) == ext)
-      {
-         name = name.substr(0, name.size() - ext.size());
-         break;
-      }
-   }
-
-   // Remove "Contents/MacOS/" artifacts
-   auto macosPos = name.find("Contents/MacOS/");
-   if (macosPos != std::string::npos)
-      name = name.substr(macosPos + 15);
-
-   return trim(name);
-}
-
-// ─── API Implementation ─────────────────────────────────────────────────
-
-std::string PluginDisplayName::GetDisplayName(const std::string &internalName,
-                                              const std::string &vendor,
-                                              const std::string &format)
-{
-   if (!sLoaded) { LoadBuiltinAliasesImpl(); sLoaded = true; }
-
-   std::string clean = cleanPluginPath(internalName);
-
-   // 1. Exact match
-   for (const auto &a : sAliases)
-      if (toLower(a.internal) == toLower(clean))
-         return a.display;
-
-   // 2. Exact match on original name (before path cleaning)
-   for (const auto &a : sAliases)
-      if (toLower(a.internal) == toLower(internalName))
-         return a.display;
-
-   // 3. Vendor-prefixed: "Vendor: Name" → check alias
-   auto colonPos = clean.find(':');
-   if (colonPos != std::string::npos)
-   {
-      std::string afterVendor = trim(clean.substr(colonPos + 1));
-      for (const auto &a : sAliases)
-         if (toLower(a.internal) == toLower(afterVendor))
-            return a.display;
-   }
-
-   // 4. Fallback: clean up the name
-   std::string display = splitCamelCase(clean);
-   return display;
-}
-
-std::string PluginDisplayName::GetDisplayVendor(const std::string &internalVendor)
-{
-   if (!sLoaded) { LoadBuiltinAliasesImpl(); sLoaded = true; }
-
-   // Map known vendors to clean display names
-   static const std::map<std::string, std::string> vendorMap = {
-      {"Tokyo Dawn Labs", "TDR"},
-      {"Softube",         "Softube"},
-      {"MeldaProduction", "Melda"},
-      {"Audacity",        ""},
-   };
-
-   auto it = vendorMap.find(internalVendor);
-   if (it != vendorMap.end())
+   // 1. Try exact match first
+   auto it = mAliasMap.find(key);
+   if (it != mAliasMap.end())
       return it->second;
 
-   return internalVendor;
+   // 2. Try case-insensitive match
+   wxString lowerKey = key.Lower();
+   for (const auto &pair : mAliasMap)
+   {
+      if (pair.first.Lower() == lowerKey)
+         return pair.second;
+   }
+
+   // 3. Try vendor-prefixed match (for "Tokyo Dawn Labs:TDR Nova" style)
+   if (!vendor.IsEmpty())
+   {
+      wxString composite = vendor + wxT(":") + key;
+      auto cit = mAliasMap.find(composite);
+      if (cit != mAliasMap.end())
+         return cit->second;
+   }
+
+   // 4. No alias found — clean up the raw name for display
+   wxString display = key;
+
+   // Remove common suffixes that look like file extensions
+   if (display.Lower().EndsWith(wxT(".vst3")))
+      display = display.Left(display.length() - 5);
+   else if (display.Lower().EndsWith(wxT(".vst")))
+      display = display.Left(display.length() - 4);
+   else if (display.Lower().EndsWith(wxT(".component")))
+      display = display.Left(display.length() - 10);
+   else if (display.Lower().EndsWith(wxT(".lv2")))
+      display = display.Left(display.length() - 4);
+   else if (display.Lower().EndsWith(wxT(".ny")))
+      display = display.Left(display.length() - 3);
+
+   // Remove "Contents/MacOS/" etc. if a full path leaked through
+   int pos = display.Find(wxT("Contents"));
+   if (pos != wxNOT_FOUND)
+   {
+      display = display.Mid(0, pos);
+      pos = display.Find(wxT('/'), true);
+      if (pos != wxNOT_FOUND && pos < (int)display.length() - 1)
+         display = display.Mid(pos + 1);
+   }
+
+   // CamelCase → space-separated (e.g. "SpectralEditMulti" → "Spectral Edit Multi")
+   wxString spaced;
+   for (size_t i = 0; i < display.length(); ++i)
+   {
+      wxChar ch = display[i];
+      if (i > 0 && wxIsupper(ch) && !wxIsspace(display[i-1]))
+         spaced += wxT(' ');
+      spaced += ch;
+   }
+   if (!spaced.IsEmpty())
+      display = spaced;
+
+   // Clean up any double spaces
+   while (display.Replace(wxT("  "), wxT(" "))) {}
+
+   return display.Trim(true).Trim(false);
 }
 
-bool PluginDisplayName::ShouldShowVendorSubmenu(const std::string &vendor)
+wxString PluginDisplayName::GetDisplayVendor(const wxString &internalVendor) const
 {
-   // Always return false — we use flat menus
-   // No vendor submenus in HGE Music Studio
+   // Return empty string — this tells the menu builder not to create
+   // a vendor submenu. ALL plugins appear flat under the format heading.
+   return wxEmptyString;
+}
+
+bool PluginDisplayName::ShouldShowVendorSubmenu(const wxString &vendor) const
+{
+   // Never show vendor submenus. The menu is flat.
    return false;
 }
 
-void PluginDisplayName::RegisterAlias(const std::string &internal,
-                                       const std::string &display)
+// ─── Registration ───────────────────────────────────────────────────────
+
+void PluginDisplayName::RegisterAlias(const wxString &internalName,
+                                       const wxString &displayName)
 {
-   for (auto &a : sAliases)
+   mAliasMap[internalName] = displayName;
+   wxLogMessage(wxT("PluginDisplayName: Alias registered \"%s\" → \"%s\""),
+                internalName, displayName);
+}
+
+void PluginDisplayName::HideVendor(const wxString &vendor)
+{
+   if (std::find(mHiddenVendors.begin(), mHiddenVendors.end(), vendor)
+       == mHiddenVendors.end())
    {
-      if (a.internal == internal)
-      {
-         a.display = display;
-         return;
-      }
+      mHiddenVendors.push_back(vendor);
    }
-   sAliases.push_back({internal, display, false, false});
 }
 
-void PluginDisplayName::HideVendor(const std::string &vendor)
-{
-   sHiddenVendors.insert(vendor);
-}
-
-bool PluginDisplayName::LoadConfigFile(const std::string &path)
-{
-   // Load from plugin-aliases.xml
-   // Simple XML parser — production should use a proper XML library
-   std::ifstream file(path);
-   if (!file.is_open()) return false;
-
-   std::string line;
-   while (std::getline(file, line))
-   {
-      // Parse: <Alias internal="..." display="..." hge="..." hidden="..."/>
-      auto intPos = line.find("internal=\"");
-      auto dispPos = line.find("display=\"");
-      auto hgePos = line.find("hge=\"");
-      auto hiddenPos = line.find("hidden=\"");
-
-      if (intPos != std::string::npos && dispPos != std::string::npos)
-      {
-         intPos += 10;
-         std::string internal = line.substr(intPos, line.find('"', intPos) - intPos);
-         dispPos += 9;
-         std::string display = line.substr(dispPos, line.find('"', dispPos) - dispPos);
-         bool hge = (hgePos != std::string::npos &&
-                     line.substr(hgePos + 5, 4) == "true");
-         bool hidden = (hiddenPos != std::string::npos &&
-                        line.substr(hiddenPos + 8, 4) == "true");
-
-         sAliases.push_back({internal, display, hge, hidden});
-      }
-   }
-
-   return true;
-}
+// ─── Built-in Aliases ───────────────────────────────────────────────────
 
 void PluginDisplayName::LoadBuiltinAliases()
 {
-   LoadBuiltinAliasesImpl();
+   // ── HGE Music Studio Built-in Bundle ──────────────────────────────
+   RegisterAlias(wxT("TDR Nova"),        wxT("TDR EQ"));
+   RegisterAlias(wxT("MAutoPitch"),      wxT("AutoTune"));
+   RegisterAlias(wxT("SaturationKnob"),  wxT("Saturation Knob"));
+   RegisterAlias(wxT("MEqualizer"),      wxT("Equalizer"));
+   RegisterAlias(wxT("MCompressor"),     wxT("Compressor"));
+   RegisterAlias(wxT("MLimiter"),        wxT("Limiter"));
+   RegisterAlias(wxT("MGate"),           wxT("Gate"));
+   RegisterAlias(wxT("MTransformer"),    wxT("Transformer"));
+   RegisterAlias(wxT("delay"),           wxT("Delay"));
+   RegisterAlias(wxT("notch"),           wxT("Notch Filter"));
+   RegisterAlias(wxT("highpass"),        wxT("High-Pass Filter"));
+   RegisterAlias(wxT("lowpass"),         wxT("Low-Pass Filter"));
+   RegisterAlias(wxT("ShelfFilter"),     wxT("Shelf Filter"));
+   RegisterAlias(wxT("tremolo"),         wxT("Tremolo"));
+   RegisterAlias(wxT("vocoder"),         wxT("Vocoder"));
+   RegisterAlias(wxT("noisegate"),       wxT("Noise Gate"));
+   RegisterAlias(wxT("legacy-limiter"),  wxT("Limiter (Legacy)"));
+   RegisterAlias(wxT("rms"),             wxT("RMS Analyzer"));
+   RegisterAlias(wxT("beat"),            wxT("Beat Finder"));
+   RegisterAlias(wxT("pluck"),           wxT("Pluck"));
+   RegisterAlias(wxT("rissetdrum"),      wxT("Risset Drum"));
+   RegisterAlias(wxT("rhythmtrack"),     wxT("Rhythm Track"));
+   RegisterAlias(wxT("crossfadeclips"),  wxT("Crossfade Clips"));
+   RegisterAlias(wxT("crossfadetracks"), wxT("Crossfade Tracks"));
+   RegisterAlias(wxT("StudioFadeOut"),   wxT("Fade Out"));
+   RegisterAlias(wxT("adjustable-fade"), wxT("Adjustable Fade"));
+   RegisterAlias(wxT("clipfix"),         wxT("Clip Fix"));
+   RegisterAlias(wxT("equalabel"),       wxT("Equal-Label"));
+   RegisterAlias(wxT("label-sounds"),    wxT("Label Sounds"));
+   RegisterAlias(wxT("sample-data-export"), wxT("Sample Data Export"));
+   RegisterAlias(wxT("sample-data-import"), wxT("Sample Data Import"));
+   RegisterAlias(wxT("nyquist-plug-in-installer"), wxT("Nyquist Plugin Installer"));
+
+   // Spectral edits
+   RegisterAlias(wxT("SpectralEditMulti"),       wxT("Spectral Edit Multi"));
+   RegisterAlias(wxT("SpectralEditParametricEQ"),wxT("Spectral Parametric EQ"));
+   RegisterAlias(wxT("SpectralEditShelves"),     wxT("Spectral Shelves"));
+   RegisterAlias(wxT("spectral-delete"),         wxT("Spectral Delete"));
+
+   // ── Hide common vendors to flatten the menu ────────────────────────
+   HideVendor(wxT("Tokyo Dawn Labs"));
+   HideVendor(wxT("Tokyo Dawn Records"));
+   HideVendor(wxT("MeldaProduction"));
+   HideVendor(wxT("Waves"));
+   HideVendor(wxT("iZotope"));
+   HideVendor(wxT("FabFilter"));
+   HideVendor(wxT("Valhalla"));
+   HideVendor(wxT("Soundtoys"));
+   HideVendor(wxT("Eventide"));
+   HideVendor(wxT("Universal Audio"));
+   HideVendor(wxT("Native Instruments"));
+   HideVendor(wxT("Plugin Alliance"));
+   HideVendor(wxT("Brainworx"));
+   HideVendor(wxT("PSP Audio"));
+   HideVendor(wxT("AudioThing"));
+   HideVendor(wxT("Klanghelm"));
+   HideVendor(wxT("ToneBoosters"));
+   HideVendor(wxT("Voxengo"));
+   HideVendor(wxT("Sonic Anomaly"));
+   HideVendor(wxT("Variety Of Sound"));
+
+   wxLogMessage(wxT("PluginDisplayName: %zu built-in aliases loaded"),
+                mAliasMap.size());
 }
 
-std::vector<PluginDisplayName::AliasInfo> PluginDisplayName::GetAllAliases()
-{
-   if (!sLoaded) { LoadBuiltinAliasesImpl(); sLoaded = true; }
+// ─── Config File Loading ────────────────────────────────────────────────
 
-   std::vector<AliasInfo> result;
-   for (const auto &a : sAliases)
-      result.push_back({a.internal, a.display, a.hgeCertified, a.hidden});
+bool PluginDisplayName::LoadConfigFile(const wxString &filePath)
+{
+   if (!wxFile::Exists(filePath))
+   {
+      wxLogWarning(wxT("PluginDisplayName: Config file not found: %s"), filePath);
+      return false;
+   }
+
+   wxXmlDocument doc;
+   if (!doc.Load(filePath))
+   {
+      wxLogWarning(wxT("PluginDisplayName: Failed to parse config: %s"), filePath);
+      return false;
+   }
+
+   wxXmlNode *root = doc.GetRoot();
+   if (!root || root->GetName() != wxT("PluginAliases"))
+      return false;
+
+   wxXmlNode *child = root->GetChildren();
+   int count = 0;
+   while (child)
+   {
+      if (child->GetName() == wxT("Alias"))
+      {
+         wxString internal = child->GetAttribute(wxT("internal"));
+         wxString display  = child->GetAttribute(wxT("display"));
+         if (!internal.IsEmpty() && !display.IsEmpty())
+         {
+            RegisterAlias(internal, display);
+            count++;
+         }
+      }
+      child = child->GetNext();
+   }
+
+   wxLogMessage(wxT("PluginDisplayName: Loaded %d aliases from %s"),
+                count, filePath);
+   return true;
+}
+
+// ─── Utilities ──────────────────────────────────────────────────────────
+
+wxString PluginDisplayName::SanitizePath(const wxString &path) const
+{
+   wxString safe = path;
+
+   // Strip app bundle internal paths
+   int idx = safe.Find(wxT(".app/Contents/"));
+   if (idx != wxNOT_FOUND)
+   {
+      safe = safe.Mid(idx + 5); // skip ".app"
+   }
+
+   // Strip absolute paths, keep just the plugin name
+   wxFileName fn(safe);
+   wxString name = fn.GetName();
+
+   // Remove common extensions
+   if (name.Lower().EndsWith(wxT(".vst3")))
+      name = name.Left(name.length() - 5);
+   else if (name.Lower().EndsWith(wxT(".vst")))
+      name = name.Left(name.length() - 4);
+
+   // Fall back to display name if available
+   wxString display = GetDisplayName(name);
+   if (display != name)
+      return display;
+
+   return name;
+}
+
+wxString PluginDisplayName::NameFromPath(const wxString &path) const
+{
+   wxFileName fn(path);
+   return fn.GetName();
+}
+
+std::vector<std::pair<wxString, wxString>>
+PluginDisplayName::GetAllAliases() const
+{
+   std::vector<std::pair<wxString, wxString>> result;
+   for (const auto &pair : mAliasMap)
+      result.push_back(pair);
    return result;
 }
 
 void PluginDisplayName::ClearAliases()
 {
-   sAliases.clear();
-   sHiddenVendors.clear();
-   sLoaded = false;
+   mAliasMap.clear();
+   mHiddenVendors.clear();
+   wxLogMessage(wxT("PluginDisplayName: All aliases cleared"));
 }

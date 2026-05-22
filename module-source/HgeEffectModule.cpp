@@ -3,7 +3,7 @@
  HGE Music Studio — Effect Module Implementation
 
  Registers:
-   1. Tools → HGE Effect Browser menu item
+   1. Effect → HGE Effect Browser menu item
    2. Command handler to open the browser dialog
    3. Startup/shutdown lifecycle
 
@@ -21,7 +21,7 @@
 
  Command ID:  "HgeEffectBrowser"
  Menu label:  "HGE Effect Browser...\tCtrl+Shift+E"
- Location:    Tools menu (between existing items)
+ Location:    Effect menu (top HGE section)
 
  =========================================================================
  SAFETY
@@ -42,9 +42,10 @@
 #include <wx/frame.h>
 #include <wx/menu.h>
 
+#include "CommonCommandFlags.h"
 #include "MenuRegistry.h"
-#include "CommandManager.h"
-#include "EffectManager.h"
+#include "../../../libraries/lib-plugin-curation/PluginCategoryManager.h"
+#include "../../../libraries/lib-plugin-display/PluginDisplayName.h"
 #include "Project.h"
 #include "ProjectWindow.h"
 
@@ -54,6 +55,29 @@
 #endif
 
 bool HgeEffectModule::sRegistered = false;
+
+#if HGE_EFFECT_BROWSER
+namespace {
+
+void OnHgeEffectBrowser(const CommandContext &ctx)
+{
+   HgeEffectModule::OpenEffectBrowser(ctx);
+}
+
+using namespace MenuRegistry;
+
+static AttachedItem sHgeEffectBrowserMenuItem{
+   Section("HGE",
+      Command(wxT("HgeEffectBrowser"),
+         XXO("HGE Effect Browser...\tCtrl+Shift+E"),
+         OnHgeEffectBrowser,
+         AlwaysEnabledFlag,
+         Options{}.LongName(XO("Open the categorized HGE effect browser")))),
+   { wxT("Effect"), Registry::OrderingHint(Registry::OrderingHint::Begin) }
+};
+
+}
+#endif
 
 // ─── Startup / Shutdown ──────────────────────────────────────────────────
 
@@ -66,28 +90,12 @@ bool HgeEffectModule::OnStartup()
       return true;
    }
 
-   wxLogMessage("HGE EffectModule: Registering effect browser...");
+   wxLogMessage("HGE EffectModule: Initializing effect browser systems...");
 
-   // Register command
-   CommandManager::Get().RegisterCommand(
-      wxT("HgeEffectBrowser"),                           // ID
-      XX("HGE Effect Browser...\tCtrl+Shift+E"),         // Label + shortcut
-      XX("Open the categorized HGE effect browser"),     // Description
-      wxT("Tools"),                                       // Menu path
-      std::function<void(const CommandContext&)>(         // Handler
-         &HgeEffectModule::OpenEffectBrowser
-      ),
-      wxT("HGE"),                                         // Category
-      true                                                // Can use
-   );
+   PluginCategoryManager::Get().LoadBuiltinCategories();
+   PluginDisplayName::Get().LoadBuiltinAliases();
 
    sRegistered = true;
-   wxLogMessage("HGE EffectModule: Registered successfully");
-
-   // Initialize PluginCategoryManager and PluginDisplayName
-   PluginCategoryManager::Get().LoadBuiltinCategories();
-   PluginDisplayName::LoadBuiltinAliases();
-
    wxLogMessage("HGE EffectModule: Plugin systems initialized");
    return true;
 #else
@@ -100,10 +108,7 @@ void HgeEffectModule::OnShutdown()
 {
    wxLogMessage("HGE EffectModule: Shutting down");
 
-   // Save plugin state (favorites, recent)
-   wxString statePath = wxStandardPaths::Get().GetUserDataDir()
-                       + wxFILE_SEP_PATH + wxT("plugin-state.json");
-   PluginCategoryManager::Get().SaveState(statePath.ToStdString());
+   PluginCategoryManager::Get().SaveState();
 
    sRegistered = false;
 }
@@ -115,7 +120,7 @@ void HgeEffectModule::OpenEffectBrowser(const CommandContext &ctx)
    wxWindow *parent = nullptr;
 
    // Try to get the active project window as parent
-   auto project = ctx.GetProject();
+   auto *project = &ctx.project;
    if (project)
    {
       auto &projWindow = ProjectWindow::Get(*project);

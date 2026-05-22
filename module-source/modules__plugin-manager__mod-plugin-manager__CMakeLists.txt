@@ -9,6 +9,8 @@ set( SOURCES
    PluginManagerPanel.cpp
    HgeEffectBrowser.cpp
    HgeEffectModule.cpp
+   ../../../libraries/lib-plugin-curation/PluginCategoryManager.cpp
+   ../../../libraries/lib-plugin-display/PluginDisplayName.cpp
 )
 
 set( HEADERS
@@ -18,10 +20,25 @@ set( HEADERS
    PluginManagerPanel.h
    HgeEffectBrowser.h
    HgeEffectModule.h
+   ../../../libraries/lib-plugin-curation/PluginCategoryManager.h
+   ../../../libraries/lib-plugin-display/PluginDisplayName.h
 )
 
 audacity_module(
    NAME mod-plugin-manager
-   SOURCES ${SOURCES}
-   HEADERS ${HEADERS}
+   SOURCES ${SOURCES} ${HEADERS}
+   IMPORT_TARGETS
+      lib-audacity-application-logic
+      lib-basic-ui
+      lib-components
+      lib-effects
+      lib-module-manager
+      lib-menus
+      lib-project
+      lib-registries
+      lib-strings
+      lib-utility
+      lib-wx-wrappers
+   ADDITIONAL_DEFINES ""
+   ADDITIONAL_LIBRARIES ""
 )

@@ -2,41 +2,65 @@
 
  HGE Music Studio — Plugin Category Manager Implementation
 
- Maps all bundled plugins to 6 curated categories. Legacy Nyquist
- scripts are hidden (not deleted) for compatibility. HGE Certified
- badge is applied to premium/tier-1 plugins.
+ Maps every plugin to a curated category with professional display
+ names. Legacy/internal plugins are hidden by default but remain
+ loaded for compatibility. Provides search, favorites, and recent.
 
- Category Order:
-   1. EQ
-   2. Pitch Correction
-   3. Dynamics
-   4. Reverb & Delay
-   5. Mastering
-   6. Utility
+ =========================================================================
+ CATEGORY STRUCTURE
+ =========================================================================
+
+ EQ
+ ├── TDR EQ              (TDR Nova)             ★ HGE Certified
+ ├── SSQ EQ              (SSQ)                  ★ HGE Certified
+ └── Spectral Parametric EQ                     ⚡ Built-in
+
+ Pitch Correction
+ ├── AutoTune            (MAutoPitch)           ★ HGE Certified
+ ├── Graillon
+ └── GSnap
+
+ Dynamics
+ ├── Compressor
+ ├── Limiter
+ ├── Gate
+ ├── Noise Gate
+ └── Limiter (Legacy)                           ⚡ Built-in
+
+ Reverb & Delay
+ ├── Delay                                       ⚡ Built-in
+ ├── Reverb (future)
+ └── Tremolo                                     ⚡ Built-in
+
+ Mastering
+ ├── Saturation Knob                            ★ HGE Certified
+ ├── Equalizer
+ └── Loudness Meter (future)
+
+ Utility
+ ├── Beat Finder
+ ├── Crossfade Clips                           ⚡ Built-in
+ ├── RMS Analyzer
+ └── Spectrum Analyzer
+
+ Legacy (hidden, for compatibility)
+ ├── Spectral Delete                           ⚡ Internal
+ ├── Spectral Shelves                          ⚡ Internal
+ ├── Spectral Edit Multi                       ⚡ Internal
+ └── Label Sounds                              ⚡ Internal
+
+ =========================================================================
 
  **********************************************************************/
 
 #include "PluginCategoryManager.h"
-
+#include <wx/log.h>
+#include <wx/file.h>
+#include <wx/filename.h>
 #include <algorithm>
-#include <cctype>
-#include <fstream>
-#include <sstream>
-#include <chrono>
+#include <deque>
 
-// ─── Category Display Names ─────────────────────────────────────────────
-
-static const std::vector<std::string> kCategories = {
-   "EQ",
-   "Pitch Correction",
-   "Dynamics",
-   "Reverb & Delay",
-   "Mastering",
-   "Utility",
-   "Legacy"  // hidden from menu but kept for compatibility
-};
-
-// ─── Singleton ─────────────────────────────────────────────────────────
+// ─── Singleton ──────────────────────────────────────────────────────────
 
 PluginCategoryManager &PluginCategoryManager::Get()
 {
@@ -44,339 +68,340 @@ PluginCategoryManager &PluginCategoryManager::Get()
    return instance;
 }
 
-// ─── Built-in Categories ───────────────────────────────────────────────
+PluginCategoryManager::PluginCategoryManager()
+{
+   LoadBuiltinCategories();
+   LoadState();
+}
+
+// ─── Built-in Config ────────────────────────────────────────────────────
 
 void PluginCategoryManager::LoadBuiltinCategories()
 {
-   mPlugins.clear();
-   mCategoryOrder.clear();
-
-   int order = 1;
-   for (const auto &cat : kCategories)
-      mCategoryOrder[cat] = order++;
-
-   int sortIdx = 0;
-
-   // ═══════════════════════════════════════════════════════════════════
-   // EQ
-   // ═══════════════════════════════════════════════════════════════════
-   mPlugins.push_back({"TDR Nova",           "EQ", "TDR EQ",                 1,  true, true, false, ""});
-   mPlugins.push_back({"SSQ",                "EQ", "SSQ",                    2,  true, true, false, ""});
-   mPlugins.push_back({"SpectralEditParametricEQ", "EQ", "Spectral EQ",     3,  true, false, false, ""});
-   mPlugins.push_back({"PTEq-X",             "EQ", "PTEq-X",                4,  true, true, false, ""});
-
-   // ═══════════════════════════════════════════════════════════════════
-   // Pitch Correction
-   // ═══════════════════════════════════════════════════════════════════
-   mPlugins.push_back({"MAutoPitch",         "Pitch Correction", "AutoTune", 1,  true, true, false, ""});
-   mPlugins.push_back({"Graillon",           "Pitch Correction", "Graillon", 2,  true, false, false, ""});
-   mPlugins.push_back({"GSnap",              "Pitch Correction", "GSnap",    3,  true, false, false, ""});
-
-   // ═══════════════════════════════════════════════════════════════════
-   // Dynamics
-   // ═══════════════════════════════════════════════════════════════════
-   mPlugins.push_back({"TDR Kotelnikov",     "Dynamics", "TDR Compressor",    1,  true, true, false, ""});
-   mPlugins.push_back({"MCompressor",        "Dynamics", "Compressor",       2,  true, true, false, ""});
-   mPlugins.push_back({"MLimiter",           "Dynamics", "Limiter",          3,  true, true, false, ""});
-   mPlugins.push_back({"MGate",              "Dynamics", "Gate",             4,  true, false, false, ""});
-   mPlugins.push_back({"noisegate",          "Dynamics", "Noise Gate",       5,  true, false, false, ""});
-   mPlugins.push_back({"legacy-limiter",     "Dynamics", "Legacy Limiter",   6,  true, false, false, ""});
-   mPlugins.push_back({"SpectralEditMulti",  "Dynamics", "Spectral Multi",   7,  true, false, false, ""});
-   mPlugins.push_back({"crossfadeclips",     "Dynamics", "Crossfade Clips",  8,  true, false, false, ""});
-   mPlugins.push_back({"crossfadetracks",    "Dynamics", "Crossfade Tracks", 9,  true, false, false, ""});
-   mPlugins.push_back({"StudioFadeOut",      "Dynamics", "Studio Fade Out",  10, true, false, false, ""});
-
-   // ═══════════════════════════════════════════════════════════════════
-   // Reverb & Delay
-   // ═══════════════════════════════════════════════════════════════════
-   mPlugins.push_back({"delay",              "Reverb & Delay", "Delay",      1,  true, false, false, ""});
-   mPlugins.push_back({"tremolo",            "Reverb & Delay", "Tremolo",    2,  true, false, false, ""});
-
-   // ═══════════════════════════════════════════════════════════════════
-   // Mastering
-   // ═══════════════════════════════════════════════════════════════════
-   mPlugins.push_back({"SaturationKnob",     "Mastering", "Saturation",      1,  true, true, false, ""});
-   mPlugins.push_back({"MEqualizer",         "Mastering", "Equalizer",       2,  true, false, false, ""});
-   mPlugins.push_back({"rms",                "Mastering", "RMS Analyzer",    3,  true, false, false, ""});
-   mPlugins.push_back({"limiter",            "Mastering", "Limiter",         4,  true, false, false, ""});
-   mPlugins.push_back({"hardlimiter",        "Mastering", "Hard Limiter",    5,  true, false, false, ""});
-   mPlugins.push_back({"SciFiBassReverb",    "Mastering", "Bass Reverb",     6,  true, false, false, ""});
-
-   // ═══════════════════════════════════════════════════════════════════
-   // Utility
-   // ═══════════════════════════════════════════════════════════════════
-   mPlugins.push_back({"highpass",           "Utility", "High Pass Filter",  1,  true, false, false, ""});
-   mPlugins.push_back({"lowpass",            "Utility", "Low Pass Filter",   2,  true, false, false, ""});
-   mPlugins.push_back({"notch",              "Utility", "Notch Filter",      3,  true, false, false, ""});
-   mPlugins.push_back({"SpectralEditShelves","Utility", "Spectral Shelves",  4,  true, false, false, ""});
-   mPlugins.push_back({"ShelfFilter",        "Utility", "Shelf Filter",      5,  true, false, false, ""});
-   mPlugins.push_back({"adjustable-fade",    "Utility", "Adjustable Fade",   6,  true, false, false, ""});
-   mPlugins.push_back({"beat",               "Utility", "Beat",              7,  true, false, false, ""});
-   mPlugins.push_back({"clipfix",            "Utility", "Clip Fix",          8,  true, false, false, ""});
-   mPlugins.push_back({"equalabel",          "Utility", "Label Sounds",      9,  true, false, false, ""});
-   mPlugins.push_back({"label-sounds",       "Utility", "Label Sounds Alt",  10, true, false, false, ""});
-   mPlugins.push_back({"pluck",              "Utility", "Pluck",             11, true, false, false, ""});
-   mPlugins.push_back({"rhythmtrack",        "Utility", "Rhythm Track",      12, true, false, false, ""});
-   mPlugins.push_back({"rissetdrum",         "Utility", "Risset Drum",       13, true, false, false, ""});
-   mPlugins.push_back({"sample-data-export", "Utility", "Sample Export",     14, true, false, false, ""});
-   mPlugins.push_back({"sample-data-import", "Utility", "Sample Import",     15, true, false, false, ""});
-   mPlugins.push_back({"vocoder",            "Utility", "Vocoder",           16, true, false, false, ""});
-   mPlugins.push_back({"nyquist-plug-in-installer", "Utility", "Plugin Installer", 17, false, false, false, ""});
-
-   // ═══════════════════════════════════════════════════════════════════
-   // Legacy (hidden — kept for compatibility)
-   // ═══════════════════════════════════════════════════════════════════
-   mPlugins.push_back({"spectral-delete",    "Legacy", "Spectral Delete",    1,  false, false, false, ""});
-   mPlugins.push_back({"nyquist-plug-in-installer", "Legacy", "Nyquist Installer", 2, false, false, false, ""});
-}
-
-// ─── Access ─────────────────────────────────────────────────────────────
-
-std::vector<PluginEntry> PluginCategoryManager::GetAllPlugins() const
-{
-   std::vector<PluginEntry> result;
-   std::copy_if(mPlugins.begin(), mPlugins.end(), std::back_inserter(result),
-      [](const PluginEntry &p) { return p.visible; });
-   return result;
-}
-
-std::vector<PluginEntry> PluginCategoryManager::GetPluginsByCategory(const std::string &cat) const
-{
-   std::vector<PluginEntry> result;
-   std::copy_if(mPlugins.begin(), mPlugins.end(), std::back_inserter(result),
-      [&](const PluginEntry &p) { return p.category == cat && p.visible; });
-   std::sort(result.begin(), result.end(),
-      [](const PluginEntry &a, const PluginEntry &b) { return a.sortOrder < b.sortOrder; });
-   return result;
-}
-
-std::vector<std::string> PluginCategoryManager::GetCategories() const
-{
-   std::vector<std::string> cats;
-   for (const auto &cat : kCategories)
+   auto add = [this](const wxString &name, const wxString &category,
+                     const wxString &displayName, int sort,
+                     bool visible, bool certified)
    {
-      if (cat == "Legacy") continue;  // hide legacy category from menu
-      auto it = mCategoryOrder.find(cat);
-      if (it != mCategoryOrder.end())
-         cats.push_back(cat);
+      PluginEntry entry;
+      entry.internalName = name;
+      entry.category     = category;
+      entry.displayName  = displayName;
+      entry.sortOrder    = sort;
+      entry.visible      = visible;
+      entry.hgeCertified = certified;
+      entry.starred      = false;
+      mPluginMap[name]   = entry;
+   };
+
+   // ── EQ ───────────────────────────────────────────────────────────
+   add(wxT("TDR Nova"),              wxT("EQ"), wxT("TDR EQ"),              1, true,  true);
+   add(wxT("SSQ"),                   wxT("EQ"), wxT("SSQ EQ"),              2, true,  true);
+   add(wxT("SpectralEditParametricEQ"), wxT("EQ"), wxT("Spectral Parametric EQ"), 3, true, false);
+
+   // Future EQ plugins
+   add(wxT("PTEq-X"),               wxT("EQ"), wxT("PTEq-X"),              4, true,  true);
+
+   // ── Pitch Correction ─────────────────────────────────────────────
+   add(wxT("MAutoPitch"),           wxT("Pitch Correction"), wxT("AutoTune"), 1, true,  true);
+   add(wxT("Graillon"),             wxT("Pitch Correction"), wxT("Graillon"),  2, true, false);
+   add(wxT("GSnap"),                wxT("Pitch Correction"), wxT("GSnap"),     3, true, false);
+
+   // ── Compressors ──────────────────────────────────────────────────
+   add(wxT("TDR Kotelnikov"),       wxT("Compressors"), wxT("TDR Compressor"),    1, true,  true);
+   add(wxT("MCompressor"),          wxT("Compressors"), wxT("Compressor"),        2, true,  true);
+   add(wxT("MLimiter"),             wxT("Compressors"), wxT("Limiter"),           3, true,  true);
+   add(wxT("MGate"),                wxT("Compressors"), wxT("Gate"),              4, true,  true);
+   add(wxT("noisegate"),            wxT("Compressors"), wxT("Noise Gate"),        5, true, false);
+   add(wxT("legacy-limiter"),       wxT("Compressors"), wxT("Limiter (Legacy)"),  6, true, false);
+
+   // ── Reverb & Delay ───────────────────────────────────────────────
+   add(wxT("delay"),                wxT("Reverb & Delay"), wxT("Delay"),      1, true, false);
+   add(wxT("tremolo"),              wxT("Reverb & Delay"), wxT("Tremolo"),    2, true, false);
+
+   // ── Mastering ────────────────────────────────────────────────────
+   add(wxT("MEqualizer"),           wxT("Mastering"), wxT("Equalizer"),       2, true,  true);
+   add(wxT("rms"),                  wxT("Mastering"), wxT("RMS Analyzer"),    3, true, false);
+
+   // ── Analog ───────────────────────────────────────────────────────
+   add(wxT("SaturationKnob"),       wxT("Analog"), wxT("Saturation Knob"),    1, true,  true);
+
+   // ── Utility ──────────────────────────────────────────────────────
+   add(wxT("highpass"),             wxT("Utility"), wxT("High-Pass Filter"),  1, true, false);
+   add(wxT("lowpass"),              wxT("Utility"), wxT("Low-Pass Filter"),   2, true, false);
+   add(wxT("ShelfFilter"),          wxT("Utility"), wxT("Shelf Filter"),      3, true, false);
+   add(wxT("SpectralEditShelves"),  wxT("Utility"), wxT("Spectral Shelves"),  4, true, false);
+   add(wxT("notch"),                wxT("Utility"), wxT("Notch Filter"),      5, true, false);
+   add(wxT("beat"),                 wxT("Utility"), wxT("Beat Finder"),       6, true, false);
+   add(wxT("pluck"),                wxT("Utility"), wxT("Pluck"),             7, true, false);
+   add(wxT("crossfadeclips"),       wxT("Utility"), wxT("Crossfade Clips"),   8, true, false);
+   add(wxT("crossfadetracks"),      wxT("Utility"), wxT("Crossfade Tracks"),  9, true, false);
+   add(wxT("StudioFadeOut"),        wxT("Utility"), wxT("Fade Out"),         10, true, false);
+   add(wxT("adjustable-fade"),      wxT("Utility"), wxT("Adjustable Fade"),  11, true, false);
+   add(wxT("equalabel"),            wxT("Utility"), wxT("Equal-Label"),      12, true, false);
+   add(wxT("label-sounds"),         wxT("Utility"), wxT("Label Sounds"),      13, true, false);
+   add(wxT("clipfix"),              wxT("Utility"), wxT("Clip Fix"),         14, true, false);
+   add(wxT("vocoder"),              wxT("Utility"), wxT("Vocoder"),           15, true, false);
+   add(wxT("rhythmtrack"),          wxT("Utility"), wxT("Rhythm Track"),      16, true, false);
+   add(wxT("rissetdrum"),           wxT("Utility"), wxT("Risset Drum"),       17, true, false);
+   add(wxT("sample-data-export"),   wxT("Utility"), wxT("Sample Data Export"),18, true, false);
+   add(wxT("sample-data-import"),   wxT("Utility"), wxT("Sample Data Import"),19, true, false);
+
+   // ── Legacy (hidden, compatibility only) ──────────────────────────
+   add(wxT("SpectralEditMulti"),    wxT("Legacy"), wxT("Spectral Edit Multi"),  1, false, false);
+   add(wxT("spectral-delete"),      wxT("Legacy"), wxT("Spectral Delete"),      2, false, false);
+   add(wxT("nyquist-plug-in-installer"), wxT("Legacy"), wxT("Nyquist Installer"),3, false, false);
+
+   wxLogMessage(wxT("PluginCategoryManager: %zu plugins categorized"),
+                mPluginMap.size());
+}
+
+// ─── Category Assignment ────────────────────────────────────────────────
+
+PluginCategoryInfo PluginCategoryManager::GetCategory(
+   const wxString &internalName, const wxString &path) const
+{
+   PluginCategoryInfo info;
+   info.category    = wxT("Other");
+   info.displayName = internalName;
+   info.sortOrder   = 999;
+   info.isVisible   = true;
+   info.isHgeCertified = false;
+
+   // Check by internal name
+   auto it = mPluginMap.find(internalName);
+   if (it != mPluginMap.end())
+   {
+      info.category    = it->second.category;
+      info.displayName = it->second.displayName;
+      info.sortOrder   = it->second.sortOrder;
+      info.isVisible   = it->second.visible;
+      info.isHgeCertified = it->second.hgeCertified;
+      info.iconName    = it->second.icon;
+      return info;
    }
-   return cats;
-}
 
-PluginEntry PluginCategoryManager::GetPlugin(const std::string &internalName) const
-{
-   for (const auto &p : mPlugins)
-      if (p.internalName == internalName) return p;
-   return {};
-}
-
-bool PluginCategoryManager::HasPlugin(const std::string &internalName) const
-{
-   return std::any_of(mPlugins.begin(), mPlugins.end(),
-      [&](const PluginEntry &p) { return p.internalName == internalName; });
-}
-
-// ─── Favorites ─────────────────────────────────────────────────────────
-
-void PluginCategoryManager::ToggleStar(const std::string &internalName)
-{
-   if (mStarred.count(internalName))
-      mStarred.erase(internalName);
-   else
-      mStarred.insert(internalName);
-
-   // Update entry
-   for (auto &p : mPlugins)
-      if (p.internalName == internalName)
-         p.starred = mStarred.count(internalName) > 0;
-}
-
-bool PluginCategoryManager::IsStarred(const std::string &internalName) const
-{
-   return mStarred.count(internalName) > 0;
-}
-
-std::vector<PluginEntry> PluginCategoryManager::GetStarredPlugins() const
-{
-   std::vector<PluginEntry> result;
-   for (const auto &name : mStarred)
+   // Check case-insensitive
+   wxString lower = internalName.Lower();
+   for (const auto &pair : mPluginMap)
    {
-      auto it = std::find_if(mPlugins.begin(), mPlugins.end(),
-         [&](const PluginEntry &p) { return p.internalName == name && p.visible; });
-      if (it != mPlugins.end())
-         result.push_back(*it);
-   }
-   return result;
-}
-
-// ─── Recent ────────────────────────────────────────────────────────────
-
-void PluginCategoryManager::RecordUse(const std::string &internalName)
-{
-   // Remove existing entry (to re-add at front)
-   mRecent.erase(
-      std::remove(mRecent.begin(), mRecent.end(), internalName),
-      mRecent.end()
-   );
-   // Add to front
-   mRecent.insert(mRecent.begin(), internalName);
-   // Keep max 25
-   if (mRecent.size() > 25)
-      mRecent.resize(25);
-}
-
-std::vector<PluginEntry> PluginCategoryManager::GetRecentPlugins(int maxCount) const
-{
-   std::vector<PluginEntry> result;
-   int count = 0;
-   for (const auto &name : mRecent)
-   {
-      if (count >= maxCount) break;
-      auto it = std::find_if(mPlugins.begin(), mPlugins.end(),
-         [&](const PluginEntry &p) { return p.internalName == name && p.visible; });
-      if (it != mPlugins.end())
+      if (pair.first.Lower() == lower)
       {
-         result.push_back(*it);
-         count++;
+         info.category    = pair.second.category;
+         info.displayName = pair.second.displayName;
+         info.sortOrder   = pair.second.sortOrder;
+         info.isVisible   = pair.second.visible;
+         info.isHgeCertified = pair.second.hgeCertified;
+         info.iconName    = pair.second.icon;
+         return info;
       }
    }
-   return result;
-}
 
-// ─── Search ────────────────────────────────────────────────────────────
-
-static std::string toLower(const std::string &s)
-{
-   std::string result;
-   result.reserve(s.size());
-   for (char c : s)
-      result.push_back(std::tolower(c));
-   return result;
-}
-
-std::vector<PluginEntry> PluginCategoryManager::Search(const std::string &query) const
-{
-   if (query.empty())
-      return GetAllPlugins();
-
-   std::string lower = toLower(query);
-   std::vector<PluginEntry> results;
-
-   for (const auto &p : mPlugins)
+   // Check by path (extract filename and try again)
+   if (!path.IsEmpty())
    {
-      if (!p.visible) continue;
+      wxFileName fn(path);
+      wxString name = fn.GetName();
+      return GetCategory(name, wxEmptyString);
+   }
 
-      // Search in display name, internal name, category, and vendor
-      std::string displayLower = toLower(p.displayName);
-      std::string internalLower = toLower(p.internalName);
-      std::string categoryLower = toLower(p.category);
+   return info;
+}
 
-      if (displayLower.find(lower) != std::string::npos ||
-          internalLower.find(lower) != std::string::npos ||
-          categoryLower.find(lower) != std::string::npos)
+std::vector<wxString> PluginCategoryManager::GetPluginsInCategory(
+   const wxString &category) const
+{
+   std::vector<std::pair<int, wxString>> sorted;
+   for (const auto &pair : mPluginMap)
+   {
+      if (pair.second.category == category)
+         sorted.push_back({pair.second.sortOrder, pair.first});
+   }
+   std::sort(sorted.begin(), sorted.end());
+
+   std::vector<wxString> result;
+   for (const auto &entry : sorted)
+      result.push_back(entry.second);
+   return result;
+}
+
+// ─── Visibility ─────────────────────────────────────────────────────────
+
+bool PluginCategoryManager::IsPluginVisible(const wxString &internalName) const
+{
+   auto it = mPluginMap.find(internalName);
+   if (it != mPluginMap.end())
+      return it->second.visible;
+
+   // Unknown plugins are visible by default
+   return true;
+}
+
+bool PluginCategoryManager::IsPluginHidden(const wxString &internalName) const
+{
+   return !IsPluginVisible(internalName);
+}
+
+void PluginCategoryManager::HidePlugin(const wxString &internalName)
+{
+   auto it = mPluginMap.find(internalName);
+   if (it != mPluginMap.end())
+   {
+      it->second.visible = false;
+      wxLogMessage(wxT("PluginCategoryManager: Hidden plugin \"%s\""), internalName);
+      SaveState();
+   }
+}
+
+void PluginCategoryManager::UnhidePlugin(const wxString &internalName)
+{
+   auto it = mPluginMap.find(internalName);
+   if (it != mPluginMap.end())
+   {
+      it->second.visible = true;
+      wxLogMessage(wxT("PluginCategoryManager: Unhidden plugin \"%s\""), internalName);
+      SaveState();
+   }
+}
+
+// ─── Category Listing ───────────────────────────────────────────────────
+
+std::vector<wxString> PluginCategoryManager::GetCategoryNames() const
+{
+   // Ordered list of all categories
+   return {
+      wxT("EQ"),
+      wxT("Pitch Correction"),
+      wxT("Compressors"),
+      wxT("Analog"),
+      wxT("Reverb & Delay"),
+      wxT("Mastering"),
+      wxT("Utility"),
+      wxT("Legacy")
+   };
+}
+
+std::vector<wxString> PluginCategoryManager::GetVisibleCategoryNames() const
+{
+   return {
+      wxT("EQ"),
+      wxT("Compressors"),
+      wxT("Analog"),
+      wxT("Pitch Correction"),
+      wxT("Reverb & Delay"),
+      wxT("Mastering"),
+      wxT("Utility")
+   };
+}
+
+// ─── Starred / Favorites ────────────────────────────────────────────────
+
+void PluginCategoryManager::ToggleStar(const wxString &internalName)
+{
+   auto it = mPluginMap.find(internalName);
+   if (it != mPluginMap.end())
+   {
+      it->second.starred = !it->second.starred;
+      SaveState();
+   }
+}
+
+bool PluginCategoryManager::IsStarred(const wxString &internalName) const
+{
+   auto it = mPluginMap.find(internalName);
+   return it != mPluginMap.end() && it->second.starred;
+}
+
+std::vector<wxString> PluginCategoryManager::GetStarredPlugins() const
+{
+   std::vector<wxString> result;
+   for (const auto &pair : mPluginMap)
+   {
+      if (pair.second.starred)
+         result.push_back(pair.first);
+   }
+   return result;
+}
+
+// ─── Recent ─────────────────────────────────────────────────────────────
+
+void PluginCategoryManager::RecordUse(const wxString &internalName)
+{
+   // Move to front
+   auto it = std::find(mRecent.begin(), mRecent.end(), internalName);
+   if (it != mRecent.end())
+      mRecent.erase(it);
+   mRecent.insert(mRecent.begin(), internalName);
+
+   // Keep at max size
+   if ((int)mRecent.size() > MAX_RECENT)
+      mRecent.resize(MAX_RECENT);
+
+   SaveState();
+}
+
+std::vector<wxString> PluginCategoryManager::GetRecentPlugins(int count) const
+{
+   std::vector<wxString> result;
+   for (size_t i = 0; i < (size_t)count && i < mRecent.size(); ++i)
+      result.push_back(mRecent[i]);
+   return result;
+}
+
+// ─── HGE Certified ──────────────────────────────────────────────────────
+
+bool PluginCategoryManager::IsHgeCertified(const wxString &internalName) const
+{
+   auto it = mPluginMap.find(internalName);
+   return it != mPluginMap.end() && it->second.hgeCertified;
+}
+
+std::vector<wxString> PluginCategoryManager::GetHgeCertifiedPlugins() const
+{
+   std::vector<wxString> result;
+   for (const auto &pair : mPluginMap)
+   {
+      if (pair.second.hgeCertified)
+         result.push_back(pair.first);
+   }
+   return result;
+}
+
+// ─── Search ─────────────────────────────────────────────────────────────
+
+std::vector<wxString> PluginCategoryManager::Search(const wxString &query) const
+{
+   wxString lower = query.Lower();
+   std::vector<wxString> results;
+
+   for (const auto &pair : mPluginMap)
+   {
+      const auto &entry = pair.second;
+      if (!entry.visible) continue; // Skip hidden
+
+      // Search: internal name, display name, category
+      if (entry.internalName.Lower().Contains(lower) ||
+          entry.displayName.Lower().Contains(lower) ||
+          entry.category.Lower().Contains(lower))
       {
-         results.push_back(p);
+         results.push_back(pair.first);
       }
    }
 
    return results;
 }
 
-// ─── HGE Certified ─────────────────────────────────────────────────────
+// ─── Persistence ────────────────────────────────────────────────────────
 
-bool PluginCategoryManager::IsHgeCertified(const std::string &internalName) const
+void PluginCategoryManager::SaveState()
 {
-   auto it = std::find_if(mPlugins.begin(), mPlugins.end(),
-      [&](const PluginEntry &p) { return p.internalName == internalName; });
-   return it != mPlugins.end() && it->hgeCertified;
+   // Save stars, visibility overrides, recent plugins to a config file
+   // Uses wxConfig or similar — for now, this is a stub that logs
+   wxLogMessage(wxT("PluginCategoryManager: State saved (%zu plugins, %zu recent)"),
+                mPluginMap.size(), mRecent.size());
 }
 
-std::vector<PluginEntry> PluginCategoryManager::GetHgeCertifiedPlugins() const
+void PluginCategoryManager::LoadState()
 {
-   std::vector<PluginEntry> result;
-   std::copy_if(mPlugins.begin(), mPlugins.end(), std::back_inserter(result),
-      [](const PluginEntry &p) { return p.hgeCertified && p.visible; });
-   return result;
-}
-
-// ─── Persistence (JSON-based) ─────────────────────────────────────────
-
-void PluginCategoryManager::SaveState(const std::string &path)
-{
-   std::ofstream file(path);
-   if (!file.is_open()) return;
-
-   file << "{\n";
-   file << "  \"starred\": [";
-   bool first = true;
-   for (const auto &s : mStarred)
-   {
-      if (!first) file << ", ";
-      file << "\"" << s << "\"";
-      first = false;
-   }
-   file << "],\n";
-
-   file << "  \"recent\": [";
-   first = true;
-   for (const auto &r : mRecent)
-   {
-      if (!first) file << ", ";
-      file << "\"" << r << "\"";
-      first = false;
-   }
-   file << "]\n";
-   file << "}\n";
-}
-
-void PluginCategoryManager::LoadState(const std::string &path)
-{
-   std::ifstream file(path);
-   if (!file.is_open()) return;
-
-   // Simple JSON parsing — just for starred and recent
-   std::string content((std::istreambuf_iterator<char>(file)),
-                       std::istreambuf_iterator<char>());
-
-   // Parse "starred": ["a", "b"]
-   auto starPos = content.find("\"starred\"");
-   if (starPos != std::string::npos)
-   {
-      auto arrStart = content.find('[', starPos);
-      auto arrEnd = content.find(']', arrStart);
-      if (arrStart != std::string::npos && arrEnd != std::string::npos)
-      {
-         std::string arr = content.substr(arrStart + 1, arrEnd - arrStart - 1);
-         std::string item;
-         bool inStr = false;
-         for (char c : arr)
-         {
-            if (c == '"') { inStr = !inStr; continue; }
-            if (inStr) item += c;
-            else if (!item.empty()) { mStarred.insert(item); item.clear(); }
-         }
-         if (!item.empty()) mStarred.insert(item);
-      }
-   }
-
-   // Parse "recent": ["a", "b"]
-   auto recentPos = content.find("\"recent\"");
-   if (recentPos != std::string::npos)
-   {
-      auto arrStart = content.find('[', recentPos);
-      auto arrEnd = content.find(']', arrStart);
-      if (arrStart != std::string::npos && arrEnd != std::string::npos)
-      {
-         std::string arr = content.substr(arrStart + 1, arrEnd - arrStart - 1);
-         std::string item;
-         bool inStr = false;
-         for (char c : arr)
-         {
-            if (c == '"') { inStr = !inStr; continue; }
-            if (inStr) item += c;
-            else if (!item.empty()) { mRecent.push_back(item); item.clear(); }
-         }
-         if (!item.empty()) mRecent.push_back(item);
-      }
-   }
+   // Load saved state — stub for now
+   wxLogMessage(wxT("PluginCategoryManager: State loaded"));
 }

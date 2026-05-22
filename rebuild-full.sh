@@ -250,6 +250,25 @@ for ((i=0; i<${#FILE_SRC[@]}; i++)); do
   fi
 done
 
+# HGE UX/productization overlays for stock Audacity source paths.
+# These keep the creator startup template, HGE menu labels, hidden legacy
+# effect-store entry, and provider text replacement stable across rebuilds.
+copy_overlay() {
+  local src_file="$MODULE_SRC/$1"
+  local dest_file="$AUDACITY_SRC/$2"
+  if [ -f "$src_file" ]; then
+    mkdir -p "$(dirname "$dest_file")"
+    cp "$src_file" "$dest_file"
+    echo "  ✅ $2"
+  else
+    echo "  ⚠️  Missing overlay: $src_file"
+  fi
+}
+
+copy_overlay "src__ProjectManager.cpp" "src/ProjectManager.cpp"
+copy_overlay "src__menus__PluginMenus.cpp" "src/menus/PluginMenus.cpp"
+copy_overlay "src__PluginRegistrationDialog.cpp" "src/PluginRegistrationDialog.cpp"
+
 # Copy plugin-aliases.xml to app support resources
 ALIASES_DEST="$AUDACITY_SRC/build-hge/Release/HgeMusicStudio.app/Contents/Resources/plugin-aliases.xml"
 if [ -f "$MODULE_SRC/plugin-aliases.xml" ]; then
@@ -258,13 +277,23 @@ if [ -f "$MODULE_SRC/plugin-aliases.xml" ]; then
   echo "  ✅ plugin-aliases.xml"
 fi
 
-# Copy PluginCategoryManager and PluginDisplayName to libraries
+# Copy PluginCategoryManager and PluginDisplayName to libraries.
+# Keep both historical staging locations updated so the current rebuild
+# pipeline does not overwrite the HGE browser with an older API variant.
 LIBSRC="$AUDACITY_SRC/libraries/lib-plugin-category"
 mkdir -p "$LIBSRC"
 cp "$MODULE_SRC/PluginCategoryManager.h" "$LIBSRC/" 2>/dev/null || true
 cp "$MODULE_SRC/PluginCategoryManager.cpp" "$LIBSRC/" 2>/dev/null || true
 cp "$MODULE_SRC/PluginDisplayName.h" "$LIBSRC/" 2>/dev/null || true
 cp "$MODULE_SRC/PluginDisplayName.cpp" "$LIBSRC/" 2>/dev/null || true
+
+CURATION_LIBSRC="$AUDACITY_SRC/libraries/lib-plugin-curation"
+DISPLAY_LIBSRC="$AUDACITY_SRC/libraries/lib-plugin-display"
+mkdir -p "$CURATION_LIBSRC" "$DISPLAY_LIBSRC"
+cp "$MODULE_SRC/PluginCategoryManager.h" "$CURATION_LIBSRC/" 2>/dev/null || true
+cp "$MODULE_SRC/PluginCategoryManager.cpp" "$CURATION_LIBSRC/" 2>/dev/null || true
+cp "$MODULE_SRC/PluginDisplayName.h" "$DISPLAY_LIBSRC/" 2>/dev/null || true
+cp "$MODULE_SRC/PluginDisplayName.cpp" "$DISPLAY_LIBSRC/" 2>/dev/null || true
 
 # ── Step 3: Verify build environment ─────────────────────────────────────
 echo ""
