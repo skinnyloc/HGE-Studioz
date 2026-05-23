@@ -109,10 +109,10 @@ void PluginCategoryManager::LoadBuiltinCategories()
    // ── Compressors ──────────────────────────────────────────────────
    add(wxT("TDR Kotelnikov"),       wxT("Compressors"), wxT("TDR Compressor"),    1, true,  true);
    add(wxT("MCompressor"),          wxT("Compressors"), wxT("Compressor"),        2, true,  true);
-   add(wxT("MLimiter"),             wxT("Compressors"), wxT("Limiter"),           3, true,  true);
+   add(wxT("MLimiter"),             wxT("Limiters"),    wxT("Limiter"),           1, true,  true);
    add(wxT("MGate"),                wxT("Compressors"), wxT("Gate"),              4, true,  true);
    add(wxT("noisegate"),            wxT("Compressors"), wxT("Noise Gate"),        5, true, false);
-   add(wxT("legacy-limiter"),       wxT("Compressors"), wxT("Limiter (Legacy)"),  6, true, false);
+   add(wxT("legacy-limiter"),       wxT("Limiters"),    wxT("Limiter (Legacy)"),  2, true, false);
 
    // ── Reverb & Delay ───────────────────────────────────────────────
    add(wxT("delay"),                wxT("Reverb & Delay"), wxT("Delay"),      1, true, false);
@@ -273,6 +273,7 @@ std::vector<wxString> PluginCategoryManager::GetCategoryNames() const
       wxT("Pitch Correction"),
       wxT("Compressors"),
       wxT("Analog"),
+      wxT("Limiters"),
       wxT("Reverb & Delay"),
       wxT("Mastering"),
       wxT("Utility"),
@@ -287,6 +288,7 @@ std::vector<wxString> PluginCategoryManager::GetVisibleCategoryNames() const
       wxT("Compressors"),
       wxT("Analog"),
       wxT("Pitch Correction"),
+      wxT("Limiters"),
       wxT("Reverb & Delay"),
       wxT("Mastering"),
       wxT("Utility")

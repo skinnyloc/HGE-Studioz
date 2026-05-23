@@ -268,6 +268,7 @@ copy_overlay() {
 copy_overlay "src__ProjectManager.cpp" "src/ProjectManager.cpp"
 copy_overlay "src__menus__PluginMenus.cpp" "src/menus/PluginMenus.cpp"
 copy_overlay "src__PluginRegistrationDialog.cpp" "src/PluginRegistrationDialog.cpp"
+copy_overlay "src__RealtimeEffectPanel.cpp" "src/RealtimeEffectPanel.cpp"
 
 # Copy plugin-aliases.xml to app support resources
 ALIASES_DEST="$AUDACITY_SRC/build-hge/Release/HgeMusicStudio.app/Contents/Resources/plugin-aliases.xml"
