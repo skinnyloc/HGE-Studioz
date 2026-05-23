@@ -79,19 +79,15 @@ namespace {
          return;
 
       auto &trackFactory = WaveTrackFactory::Get(project);
-      auto vocalTrack = trackFactory.Create(1);
-      auto beatTrack = trackFactory.Create(2);
+      auto recordTrack = trackFactory.Create(1);
 
-      if (!vocalTrack || !beatTrack)
+      if (!recordTrack)
          return;
 
-      vocalTrack->SetName(wxT("Vocals"));
-      beatTrack->SetName(wxT("Beat / Instrumental"));
-      vocalTrack->SetSelected(true);
-      beatTrack->SetSelected(false);
+      recordTrack->SetName(wxT("Record Track"));
+      recordTrack->SetSelected(true);
 
-      tracks.Add(vocalTrack);
-      tracks.Add(beatTrack);
+      tracks.Add(recordTrack);
 #endif
    }
 }

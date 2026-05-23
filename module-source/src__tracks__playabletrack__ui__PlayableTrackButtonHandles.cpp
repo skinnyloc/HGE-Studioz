@@ -8,6 +8,7 @@ Paul Licameli split from TrackPanel.cpp
 
 **********************************************************************/
 #include "PlayableTrackButtonHandles.h"
+#include "AudioIO.h"
 #include "PlayableTrack.h"
 #include "PlayableTrackControls.h"
 #include "CommandManager.h"
@@ -28,6 +29,15 @@ Paul Licameli split from TrackPanel.cpp
 namespace
 {
    std::weak_ptr<Track> gHgeArmedTrack;
+
+   bool HgeRecordingActive()
+   {
+      const auto gAudioIO = AudioIO::Get();
+      return gAudioIO &&
+         gAudioIO->IsBusy() &&
+         !gAudioIO->IsMonitoring() &&
+         gAudioIO->GetNumCaptureChannels() > 0;
+   }
 }
 
 bool HgeTrackArm::IsArmed(const Track *pTrack)
@@ -146,6 +156,11 @@ UIHandle::Result ArmButtonHandle::CommitChanges
 {
    auto pTrack = mpTrack.lock();
    if (pProject && dynamic_cast<PlayableTrack*>(pTrack.get())) {
+      if (HgeRecordingActive()) {
+         wxLogDebug("HGE arm click ignored while recording track=%p", pTrack.get());
+         return RefreshCode::RefreshNone;
+      }
+
       const auto armed = HgeTrackArm::GetArmedTrack();
       const bool wasArmed = armed && armed.get() == pTrack.get();
       wxLogDebug("HGE arm clicked track=%p wasArmed=%d", pTrack.get(), wasArmed);
@@ -158,6 +173,9 @@ UIHandle::Result ArmButtonHandle::CommitChanges
 TranslatableString ArmButtonHandle::Tip(
    const wxMouseState &, AudacityProject &) const
 {
+   if (HgeRecordingActive())
+      return XO("Stop recording before changing the armed track");
+
    return XO("Arm this track for recording");
 }
 
