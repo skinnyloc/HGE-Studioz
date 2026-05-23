@@ -12,15 +12,18 @@ Paul Licameli split from TrackPanel.cpp
 #include "PlayableTrackControls.h"
 #include "CommandManager.h"
 #include "Project.h"
+#include "ProjectHistory.h"
 #include "../../../RefreshCode.h"
 #include "../../../RealtimeEffectPanel.h"
 #include "SampleTrack.h"
 #include "TrackFocus.h"
+#include "WaveTrack.h"
 #include "../../ui/CommonTrackInfo.h"
 #include "../../../TrackPanelMouseEvent.h"
 #include "../../../TrackUtilities.h"
 
 #include <wx/window.h>
+#include <wx/log.h>
 
 namespace
 {
@@ -33,11 +36,44 @@ bool HgeTrackArm::IsArmed(const Track *pTrack)
    return armed && armed.get() == pTrack;
 }
 
+std::shared_ptr<Track> HgeTrackArm::GetArmedTrack()
+{
+   return gHgeArmedTrack.lock();
+}
+
 void HgeTrackArm::SetArmed(AudacityProject &project, const std::shared_ptr<Track> &pTrack)
 {
+   auto previous = gHgeArmedTrack.lock();
    gHgeArmedTrack = pTrack;
-   if (pTrack)
+   if (pTrack) {
+      wxLogDebug("HGE track armed current=%p previous=%p", pTrack.get(), previous.get());
       TrackFocus::Get(project).Set(pTrack.get(), true);
+   }
+   else
+      wxLogDebug("HGE track arm cleared previous=%p", previous.get());
+}
+
+bool HgeTrackArm::SelectArmedTrackForRecording(AudacityProject &project)
+{
+   auto armed = gHgeArmedTrack.lock();
+   auto waveTrack = dynamic_cast<WaveTrack *>(armed.get());
+   if (!waveTrack) {
+      if (armed)
+         wxLogDebug("HGE record target unavailable armed=%p not a WaveTrack", armed.get());
+      else
+         wxLogDebug("HGE record target unavailable no armed track");
+      return false;
+   }
+
+   auto &tracks = TrackList::Get(project);
+   for (auto track : tracks)
+      track->SetSelected(false);
+
+   waveTrack->SetSelected(true);
+   TrackFocus::Get(project).Set(waveTrack, true);
+   ProjectHistory::Get(project).ModifyState(false);
+   wxLogDebug("HGE recording target selected track=%p", waveTrack);
+   return true;
 }
 
 MuteButtonHandle::MuteButtonHandle
@@ -109,10 +145,14 @@ UIHandle::Result ArmButtonHandle::CommitChanges
 (const wxMouseEvent &, AudacityProject *pProject, wxWindow *)
 {
    auto pTrack = mpTrack.lock();
-   if (pProject && dynamic_cast<PlayableTrack*>(pTrack.get()))
-      HgeTrackArm::SetArmed(*pProject, pTrack);
+   if (pProject && dynamic_cast<PlayableTrack*>(pTrack.get())) {
+      const auto armed = HgeTrackArm::GetArmedTrack();
+      const bool wasArmed = armed && armed.get() == pTrack.get();
+      wxLogDebug("HGE arm clicked track=%p wasArmed=%d", pTrack.get(), wasArmed);
+      HgeTrackArm::SetArmed(*pProject, wasArmed ? std::shared_ptr<Track>{} : pTrack);
+   }
 
-   return RefreshCode::RefreshCell;
+   return RefreshCode::RefreshAll;
 }
 
 TranslatableString ArmButtonHandle::Tip(

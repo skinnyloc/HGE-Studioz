@@ -17,7 +17,9 @@ class wxMouseState;
 namespace HgeTrackArm
 {
    bool IsArmed(const Track *pTrack);
+   std::shared_ptr<Track> GetArmedTrack();
    void SetArmed(AudacityProject &project, const std::shared_ptr<Track> &pTrack);
+   bool SelectArmedTrackForRecording(AudacityProject &project);
 }
 
 class AUDACITY_DLL_API MuteButtonHandle final : public ButtonHandle

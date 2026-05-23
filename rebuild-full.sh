@@ -266,6 +266,7 @@ copy_overlay() {
 }
 
 copy_overlay "src__ProjectManager.cpp" "src/ProjectManager.cpp"
+copy_overlay "src__ProjectAudioManager.cpp" "src/ProjectAudioManager.cpp"
 copy_overlay "src__menus__PluginMenus.cpp" "src/menus/PluginMenus.cpp"
 copy_overlay "src__PluginRegistrationDialog.cpp" "src/PluginRegistrationDialog.cpp"
 copy_overlay "src__RealtimeEffectPanel.cpp" "src/RealtimeEffectPanel.cpp"
