@@ -639,7 +639,7 @@ void ProjectAudioManager::OnRecord(bool altAppearance)
 {
    bool bPreferNewTrack;
    gPrefs->Read("/GUI/PreferNewTrackRecord", &bPreferNewTrack, false);
-   const bool appendRecord = (altAppearance == bPreferNewTrack);
+   bool appendRecord = (altAppearance == bPreferNewTrack);
 
    // Code from CommandHandler start...
    AudacityProject *p = &mProject;
@@ -648,6 +648,7 @@ void ProjectAudioManager::OnRecord(bool altAppearance)
       const auto armedTrack = HgeTrackArm::GetArmedTrack();
       if (armedTrack) {
          wxLogDebug("HGE record pressed with armed track=%p", armedTrack.get());
+         appendRecord = true;
          if (!HgeTrackArm::SelectArmedTrackForRecording(*p))
             wxLogDebug("HGE armed track could not be used as record target; falling back to current selection");
       }
@@ -663,6 +664,7 @@ void ProjectAudioManager::OnRecord(bool altAppearance)
 
       auto options = ProjectAudioIO::GetDefaultOptions(*p);
       WritableSampleTrackArray existingTracks;
+      std::shared_ptr<WaveTrack> hgeArmedWaveTrack;
 
       // Checking the selected tracks: counting them and
       // making sure they all have the same rate
@@ -681,14 +683,46 @@ void ProjectAudioManager::OnRecord(bool altAppearance)
       }
 
       if (appendRecord) {
-         // Try to find wave tracks to record into.  (If any are selected,
-         // try to choose only from them; else if wave tracks exist, may record into any.)
-         existingTracks = ChooseExistingRecordingTracks(*p, true, rateOfSelected);
+         const auto armedTrack = HgeTrackArm::GetArmedTrack();
+         hgeArmedWaveTrack = std::dynamic_pointer_cast<WaveTrack>(armedTrack);
+
+         if (hgeArmedWaveTrack) {
+            const auto recordingChannels =
+               std::max(1, AudioIORecordChannels.Read());
+            const auto armedChannels = hgeArmedWaveTrack->NChannels();
+            if (armedChannels <= static_cast<size_t>(recordingChannels)) {
+               existingTracks.push_back(hgeArmedWaveTrack);
+               options.rate = hgeArmedWaveTrack->GetRate();
+               t0 = std::max(t0, hgeArmedWaveTrack->GetEndTime());
+               wxLogDebug(
+                  "HGE armed recording target resolved track=%p channels=%zu inputChannels=%d",
+                  hgeArmedWaveTrack.get(), armedChannels, recordingChannels);
+            }
+            else {
+               wxLogDebug(
+                  "HGE armed recording target rejected track=%p channels=%zu inputChannels=%d",
+                  hgeArmedWaveTrack.get(), armedChannels, recordingChannels);
+               AudacityMessageBox(XO(
+                  "The armed track has more channels than the current recording input.\n"
+                  "Change the recording input channel count or arm a compatible track."),
+                  XO("Armed Track Channel Mismatch"),
+                  wxICON_ERROR | wxCENTRE);
+               return;
+            }
+         }
+         else
+            // Try to find wave tracks to record into.  (If any are selected,
+            // try to choose only from them; else if wave tracks exist, may record into any.)
+            existingTracks = ChooseExistingRecordingTracks(*p, true, rateOfSelected);
+
          if (!existingTracks.empty()) {
             t0 = std::max(t0,
-               TrackList::Get(*p).Selected<const WaveTrack>()
-               .max(&Track::GetEndTime));
-            options.rate = rateOfSelected;
+               hgeArmedWaveTrack
+                  ? hgeArmedWaveTrack->GetEndTime()
+                  : TrackList::Get(*p).Selected<const WaveTrack>()
+                     .max(&Track::GetEndTime));
+            if (!hgeArmedWaveTrack)
+               options.rate = rateOfSelected;
          }
          else {
             if (anySelected && rateOfSelected != options.rate) {
