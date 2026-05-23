@@ -16,11 +16,13 @@
 #include <wx/statbmp.h>
 #include <wx/stattext.h>
 #include <wx/menu.h>
+#include <wx/log.h>
 #include <wx/wupdlock.h>
 #include <wx/hyperlink.h>
 
 #include <wx/dcbuffer.h>
 #include <map>
+#include <set>
 
 #include "HelpSystem.h"
 #include "Theme.h"
@@ -193,7 +195,14 @@ namespace
             bool certified;
          };
 
-         std::map<wxString, std::vector<HgeMenuEntry>> categorized;
+         struct HgeCandidate
+         {
+            HgeMenuEntry entry;
+            int formatPriority;
+            wxString dedupeKey;
+         };
+
+         std::map<wxString, HgeCandidate> selectedPlugins;
 
          auto classify = [](const PluginDescriptor& plugin) {
             struct Result
@@ -255,6 +264,37 @@ namespace
             };
          };
 
+         auto pluginFormatPriority = [](const PluginDescriptor& plugin) {
+            const auto haystack = (
+               plugin.GetID() + wxT(" ") +
+               plugin.GetPath() + wxT(" ") +
+               plugin.GetSymbol().Internal()
+            ).Lower();
+
+            if (haystack.Contains(wxT("audiounit")) ||
+                haystack.Contains(wxT("audio unit")) ||
+                haystack.Contains(wxT(".component")) ||
+                haystack.Contains(wxT("/components/")))
+               return 1;
+            if (haystack.Contains(wxT("vst3")) ||
+                haystack.Contains(wxT(".vst3")))
+               return 2;
+            if (haystack.Contains(wxT("vst2")) ||
+                haystack.Contains(wxT(".vst")))
+               return 3;
+            return 9;
+         };
+
+         auto normalizeKey = [](wxString value) {
+            value.MakeLower();
+            value.Replace(wxT("..."), wxT(""));
+            value.Replace(wxT(" "), wxT(""));
+            value.Replace(wxT("-"), wxT(""));
+            value.Replace(wxT("_"), wxT(""));
+            value.Replace(wxT("."), wxT(""));
+            return value;
+         };
+
          for (const auto& plugin : PluginManager::Get().Plugins(
             [](const PluginDescriptor& desc) {
                return
@@ -276,16 +316,44 @@ namespace
             if (plugin.IsEffectInteractive() && !label.EndsWith(wxT("...")))
                label += wxT("...");
 
-            categorized[info.category].push_back({
-               plugin.GetID(),
-               label,
-               info.sortOrder,
-               info.certified
-            });
+            const auto dedupeKey = normalizeKey(info.category + wxT(":") + info.label);
+            const auto priority = pluginFormatPriority(plugin);
+            auto candidate = HgeCandidate{
+               {
+                  plugin.GetID(),
+                  label,
+                  info.sortOrder,
+                  info.certified
+               },
+               priority,
+               dedupeKey
+            };
+
+            auto existing = selectedPlugins.find(dedupeKey);
+            wxLogDebug(
+               wxT("HGE effect candidate category=%s label=%s id=%s priority=%d"),
+               info.category.c_str(), label.c_str(), plugin.GetID().c_str(), priority);
+            if (existing == selectedPlugins.end() ||
+                std::make_tuple(candidate.formatPriority, candidate.entry.id) <
+                std::make_tuple(existing->second.formatPriority, existing->second.entry.id))
+            {
+               if (existing != selectedPlugins.end())
+               {
+                  wxLogDebug(
+                     wxT("HGE effect duplicate suppressed key=%s replaced=%s selected=%s"),
+                     dedupeKey.c_str(), existing->second.entry.id.c_str(), candidate.entry.id.c_str());
+               }
+               selectedPlugins[dedupeKey] = candidate;
+            }
+            else
+            {
+               wxLogDebug(
+                  wxT("HGE effect duplicate suppressed key=%s kept=%s suppressed=%s"),
+                  dedupeKey.c_str(), existing->second.entry.id.c_str(), candidate.entry.id.c_str());
+            }
          }
 
-         int commandId = wxID_HIGHEST + 5000;
-         bool hasItems = false;
+         std::map<wxString, std::vector<HgeMenuEntry>> categorized;
          const std::vector<wxString> categoryOrder {
             wxT("EQ"),
             wxT("Compressors"),
@@ -296,6 +364,28 @@ namespace
             wxT("Mastering"),
             wxT("Utility")
          };
+         for (const auto& item : selectedPlugins)
+         {
+            const auto& candidate = item.second;
+            const auto categoryEnd = candidate.dedupeKey.Find(wxT(':'));
+            auto category = wxString{};
+            for (const auto& menuCategory : categoryOrder)
+            {
+               if (normalizeKey(menuCategory) ==
+                   candidate.dedupeKey.Left(categoryEnd >= 0 ? categoryEnd : 0))
+               {
+                  category = menuCategory;
+                  break;
+               }
+            }
+
+            if (category.empty())
+               category = wxT("Utility");
+            categorized[category].push_back(candidate.entry);
+         }
+
+         int commandId = wxID_HIGHEST + 5000;
+         bool hasItems = false;
 
          for (const auto& category : categoryOrder)
          {
