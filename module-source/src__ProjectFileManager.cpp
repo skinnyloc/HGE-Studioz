@@ -1443,6 +1443,32 @@ bool ProjectFileManager::ImportIntoTrack(
       return true;
    }
 
+   if (importedTracks.size() == 1 && targetTrack.GetClipInterfaces().empty()) {
+      auto importedTrack = importedTracks.front();
+      auto importedHolder = tracks.Remove(*importedTrack);
+      if (importedHolder) {
+         importedHolder->SetName(targetTrack.GetName());
+         auto replacement = TrackList::Temporary(nullptr, importedHolder);
+         tracks.ReplaceOne(targetTrack, std::move(*replacement));
+         auto replacementTrack =
+            dynamic_cast<WaveTrack*>(importedHolder.get());
+         SelectUtilities::SelectNone(project);
+         if (replacementTrack) {
+            replacementTrack->SetSelected(true);
+            TrackFocus::Get(project).Set(replacementTrack, true);
+            viewport.ShowTrack(*replacementTrack);
+         }
+         history.PushState(XO("Imported audio into '%s'").Format(importedHolder->GetName()),
+            XO("Import"));
+         viewport.HandleResize();
+         trackPanel.Refresh(false);
+         wxLogDebug(
+            "HGE targeted drop replaced empty template target=%p with imported track=%p",
+            &targetTrack, importedHolder.get());
+         return true;
+      }
+   }
+
    bool movedIntoTarget = false;
    for (auto importedTrack : importedTracks) {
       const auto srcChannels = importedTrack->NChannels();

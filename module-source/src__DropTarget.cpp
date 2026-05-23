@@ -22,7 +22,18 @@
 #include "WaveTrack.h"
 #include "TrackPanel.h"
 
+#include <cstdlib>
+
 #if wxUSE_DRAG_AND_DROP
+namespace
+{
+bool HgeTargetedDropEnabled()
+{
+   const auto value = std::getenv("HGE_ENABLE_TRACK_TARGETED_DROP");
+   return value && wxString::FromUTF8(value).IsSameAs("1");
+}
+}
+
 class FileObject final : public wxFileDataObject
 {
 public:
@@ -162,6 +173,13 @@ public:
       // catch block above in wxWidgets.  So stop all exceptions here.
       return GuardedCall<bool>(
          [&] {
+            if (!HgeTargetedDropEnabled()) {
+               wxLogDebug(
+                  "HGE targeted file drop disabled; using stable fallback import x=%d y=%d",
+                  x, y);
+               return ProjectFileManager::Get(*mProject).Import(filenames);
+            }
+
             auto &trackPanel = TrackPanel::Get(*mProject);
             auto &tracks = TrackList::Get(*mProject);
             const wxPoint dropPoint{x, y};
