@@ -50,10 +50,15 @@
       }
 
       char plugins_dir[1024];
+      char vst3_dir[1024];
       snprintf(plugins_dir, sizeof(plugins_dir), "%s/Plug-Ins", res_dir);
+      snprintf(vst3_dir, sizeof(vst3_dir), "%s/plug-ins/VST3", res_dir);
 
       // VST2: set VST_PATH so lib-vst scans our bundled .vst bundles
       setenv("VST_PATH", plugins_dir, 0);
+
+      // VST3: set VST3_PATH so lib-vst3 scans our bundled .vst3 bundles
+      setenv("VST3_PATH", vst3_dir, 0);
 
       // LV2: set LV2_PATH so lib-lv2 finds our bundled .lv2 bundles
       setenv("LV2_PATH", plugins_dir, 0);

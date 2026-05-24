@@ -97,11 +97,11 @@ def patch_wrapper(src):
         return False
     with open(src, 'r') as f:
         content = f.read()
-    if 'VST_PATH' in content:
-        print("  ✅ Wrapper.c VST_PATH patch already applied")
+    if 'VST_PATH' in content and 'VST3_PATH' in content:
+        print("  ✅ Wrapper.c bundled plugin paths already applied")
         return True
     block = (
-        '  // HGE: Set VST_PATH and LV2_PATH for bundled plugins\n'
+        '  // HGE: Set bundled plugin paths for self-contained DMGs\n'
         '  {\n'
         '    size_t path_len = strlen(path);\n'
         '    char *res_dir = alloca(path_len + 32);\n'
@@ -110,8 +110,11 @@ def patch_wrapper(src):
         '    if (p) strcpy(p, "/..");\n'
         '\n'
         '    char plugins_dir[1024];\n'
+        '    char vst3_dir[1024];\n'
         '    snprintf(plugins_dir, sizeof(plugins_dir), "%s/Plug-Ins", res_dir);\n'
+        '    snprintf(vst3_dir, sizeof(vst3_dir), "%s/plug-ins/VST3", res_dir);\n'
         '    setenv("VST_PATH", plugins_dir, 0);\n'
+        '    setenv("VST3_PATH", vst3_dir, 0);\n'
         '    setenv("LV2_PATH", plugins_dir, 0);\n'
         '  }\n'
     )
