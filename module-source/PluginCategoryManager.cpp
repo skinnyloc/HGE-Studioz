@@ -103,8 +103,10 @@ void PluginCategoryManager::LoadBuiltinCategories()
 
    // ── Pitch Correction ─────────────────────────────────────────────
    add(wxT("MAutoPitch"),           wxT("Pitch Correction"), wxT("AutoTune"), 1, true,  true);
-   add(wxT("Graillon"),             wxT("Pitch Correction"), wxT("Graillon"),  2, true, false);
-   add(wxT("GSnap"),                wxT("Pitch Correction"), wxT("GSnap"),     3, true, false);
+   add(wxT("Auburn Sounds Graillon 3"), wxT("Pitch Correction"), wxT("Graillon 3"),     2, true, true);
+   add(wxT("Graillon 3"),          wxT("Pitch Correction"), wxT("Graillon 3"),     2, true, true);
+   add(wxT("Graillon"),            wxT("Pitch Correction"), wxT("Graillon 3"),     2, true, true);
+   add(wxT("GSnap"),               wxT("Pitch Correction"), wxT("GSnap AutoTune"), 3, true, true);
 
    // ── Compressors ──────────────────────────────────────────────────
    add(wxT("TDR Kotelnikov"),       wxT("Compressors"), wxT("TDR Compressor"),    1, true,  true);

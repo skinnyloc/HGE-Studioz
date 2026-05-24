@@ -234,10 +234,12 @@ namespace
             if (haystack.Contains(wxT("saturation knob")) || haystack.Contains(wxT("saturationknob")))
                return Result{ wxT("Analog"), wxT("Saturation Knob"), 1, true, true };
 
-            if (haystack.Contains(wxT("graillon")))
-               return Result{ wxT("Pitch Correction"), wxT("Graillon"), 1, true, false };
+            if (haystack.Contains(wxT("auburn sounds graillon 3")) ||
+                haystack.Contains(wxT("graillon 3")) ||
+                haystack.Contains(wxT("graillon")))
+               return Result{ wxT("Pitch Correction"), wxT("Graillon 3"), 1, true, true };
             if (haystack.Contains(wxT("gsnap")))
-               return Result{ wxT("Pitch Correction"), wxT("GSnap"), 2, true, false };
+               return Result{ wxT("Pitch Correction"), wxT("GSnap AutoTune"), 2, true, true };
             if (haystack.Contains(wxT("autopitch")) || haystack.Contains(wxT("pitch")))
                return Result{ wxT("Pitch Correction"), display, 10, !plugin.IsEffectDefault(), false };
 

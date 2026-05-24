@@ -14,6 +14,11 @@
   <Alias internal="SSQ"                  display="SSQ"                   hge="true"/>
   <Alias internal="ValhallaFreqEcho"     display="Valhalla Freq Echo"    hge="true"/>
   <Alias internal="Valhalla Freq Echo"   display="Valhalla Freq Echo"    hge="true"/>
+  <Alias internal="Auburn Sounds Graillon 3" display="Graillon 3"        hge="true"/>
+  <Alias internal="Graillon 3"           display="Graillon 3"            hge="true"/>
+  <Alias internal="Graillon"             display="Graillon 3"            hge="true"/>
+  <Alias internal="GSnap"                display="GSnap AutoTune"        hge="true"/>
+  <Alias internal="GSnap AutoTune"       display="GSnap AutoTune"        hge="true"/>
 
   <!-- ═══════════════════════════════════════════════════════════════
        Nyquist Scripts → Category Mapped Names
