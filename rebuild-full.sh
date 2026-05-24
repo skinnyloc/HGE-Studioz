@@ -416,6 +416,18 @@ echo "════════════════════════�
 PLUGINS="$APP/Contents/plug-ins"
 mkdir -p "$PLUGINS/VST2" "$PLUGINS/VST3"
 
+# HGE self-contained bundled plugins. These are tracked in module-source so
+# customer DMGs do not depend on this Mac's /Library or ~/Library plugin folders.
+if [ -d "$MODULE_SRC/bundled-plugins/VST2" ]; then
+  cp -R "$MODULE_SRC/bundled-plugins/VST2/"* "$PLUGINS/VST2/" 2>/dev/null || true
+  echo "  ✅ HGE bundled VST2 plugins"
+fi
+
+if [ -d "$MODULE_SRC/bundled-plugins/VST3" ]; then
+  cp -R "$MODULE_SRC/bundled-plugins/VST3/"* "$PLUGINS/VST3/" 2>/dev/null || true
+  echo "  ✅ HGE bundled VST3 plugins"
+fi
+
 # VST2 plugins
 for src in \
   "/Library/Audio/Plug-Ins/VST/TDR Nova.vst" \

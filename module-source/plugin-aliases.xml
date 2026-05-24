@@ -12,6 +12,8 @@
   <Alias internal="TDR Kotelnikov"       display="TDR Compressor"        hge="true"/>
   <Alias internal="Saturation Knob"      display="Saturation Knob"       hge="true"/>
   <Alias internal="SSQ"                  display="SSQ"                   hge="true"/>
+  <Alias internal="ValhallaFreqEcho"     display="Valhalla Freq Echo"    hge="true"/>
+  <Alias internal="Valhalla Freq Echo"   display="Valhalla Freq Echo"    hge="true"/>
 
   <!-- ═══════════════════════════════════════════════════════════════
        Nyquist Scripts → Category Mapped Names

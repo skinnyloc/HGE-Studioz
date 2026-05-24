@@ -244,6 +244,10 @@ namespace
             if (haystack.Contains(wxT("limit")))
                return Result{ wxT("Limiters"), display, 1, !plugin.IsEffectDefault(), false };
 
+            if (haystack.Contains(wxT("valhallafreqecho")) ||
+                haystack.Contains(wxT("valhalla freq echo")))
+               return Result{ wxT("Reverb & Delay"), wxT("Valhalla Freq Echo"), 1, true, true };
+
             if (haystack.Contains(wxT("reverb")) || haystack.Contains(wxT("delay")) || haystack.Contains(wxT("echo")))
                return Result{ wxT("Reverb & Delay"), display, 1, !plugin.IsEffectDefault(), false };
 

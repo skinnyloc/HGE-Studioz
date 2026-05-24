@@ -117,6 +117,8 @@ void PluginCategoryManager::LoadBuiltinCategories()
    // ── Reverb & Delay ───────────────────────────────────────────────
    add(wxT("delay"),                wxT("Reverb & Delay"), wxT("Delay"),      1, true, false);
    add(wxT("tremolo"),              wxT("Reverb & Delay"), wxT("Tremolo"),    2, true, false);
+   add(wxT("ValhallaFreqEcho"),     wxT("Reverb & Delay"), wxT("Valhalla Freq Echo"), 3, true, true);
+   add(wxT("Valhalla Freq Echo"),   wxT("Reverb & Delay"), wxT("Valhalla Freq Echo"), 3, true, true);
 
    // ── Mastering ────────────────────────────────────────────────────
    add(wxT("MEqualizer"),           wxT("Mastering"), wxT("Equalizer"),       2, true,  true);
