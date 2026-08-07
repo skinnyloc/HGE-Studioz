@@ -56,6 +56,7 @@ HgeAiChat::HgeAiChat(wxWindow *parent, AudacityProject &project)
    , mEqStyleChoice(nullptr)
    , mCompressionChoice(nullptr)
    , mSaturationChoice(nullptr)
+   , mLimiterChoice(nullptr)
    , mSkillChoice(nullptr)
    , mSaveSkillBtn(nullptr)
    , mRenameSkillBtn(nullptr)
@@ -113,6 +114,13 @@ void HgeAiChat::BuildUi()
    mTruePeakChoice->SetSelection(1); // -1.0 default
    targetGrid->Add(mTruePeakChoice, 0, wxEXPAND);
 
+   targetGrid->Add(new wxStaticText(this, wxID_ANY, wxT("Limiter:")));
+   mLimiterChoice = new wxChoice(this, wxID_ANY);
+   mLimiterChoice->Append(wxT("On (hit the true-peak ceiling)"));
+   mLimiterChoice->Append(wxT("Off (no limiter)"));
+   mLimiterChoice->SetSelection(0); // limiter on by default
+   targetGrid->Add(mLimiterChoice, 0, wxEXPAND);
+
    targetGrid->AddGrowableCol(1, 1);
    topSizer->Add(targetGrid, 0, wxEXPAND | wxLEFT | wxRIGHT | wxTOP, 10);
 
@@ -126,6 +134,7 @@ void HgeAiChat::BuildUi()
    tweakGrid->Add(new wxStaticText(this, wxID_ANY, wxT("EQ Style:")));
    mEqStyleChoice = new wxChoice(this, wxID_ANY);
    mEqStyleChoice->Append(wxT("Auto (AI decides)"));
+   mEqStyleChoice->Append(wxT("Off (no EQ)"));
    mEqStyleChoice->Append(wxT("Natural"));
    mEqStyleChoice->Append(wxT("Bright"));
    mEqStyleChoice->Append(wxT("Warm"));
@@ -330,7 +339,7 @@ wxString HgeAiChat::BuildSettingsArgs() const
    if (tpSel >= 0 && tpSel < 4)
       args += wxString::Format(wxT(" --true-peak %g"), truePeakValues[tpSel]);
 
-   static const wxChar *eqValues[] = { nullptr, wxT("natural"), wxT("bright"), wxT("warm") };
+   static const wxChar *eqValues[] = { nullptr, wxT("off"), wxT("natural"), wxT("bright"), wxT("warm") };
    int eqSel = mEqStyleChoice->GetSelection();
    if (eqSel > 0)
       args += wxString(wxT(" --eq-style ")) + eqValues[eqSel];
@@ -344,6 +353,13 @@ wxString HgeAiChat::BuildSettingsArgs() const
    int satSel = mSaturationChoice->GetSelection();
    if (satSel > 0)
       args += wxString(wxT(" --saturation ")) + satValues[satSel];
+
+   // Limiter is always explicit (index 0 = on, 1 = off) -- it's not an "Auto"
+   // control, so pass it every time so a saved skill can't silently re-enable it.
+   static const wxChar *limiterValues[] = { wxT("on"), wxT("off") };
+   int limSel = mLimiterChoice->GetSelection();
+   if (limSel >= 0 && limSel < 2)
+      args += wxString(wxT(" --limiter ")) + limiterValues[limSel];
 
    return args.Trim(false);
 }
@@ -413,12 +429,10 @@ wxString HgeAiChat::RunAiMix(const wxString &inputWav, const wxString &prompt,
 
 void HgeAiChat::OnApply(wxCommandEvent &WXUNUSED(evt))
 {
+   // Prompt is OPTIONAL. Blank = "just master with the settings below" -- no AI
+   // direction and no AI call; runs a fresh manual master of the selected track.
    wxString prompt = mPromptCtrl->GetValue().Trim();
-   if (prompt.IsEmpty())
-   {
-      Log(wxT("Type a prompt first."));
-      return;
-   }
+   const bool noPrompt = prompt.IsEmpty();
 
    mApplyBtn->Disable();
 
@@ -439,12 +453,14 @@ void HgeAiChat::OnApply(wxCommandEvent &WXUNUSED(evt))
    wxString effectivePrompt;
    bool sameTrackAsLastRun = !mLastTrackName.IsEmpty() && mLastTrackName == currentTrackName;
 
-   if (mAwaitingClarify && sameTrackAsLastRun && !mPendingInputWav.IsEmpty() && wxFileExists(mPendingInputWav))
+   // A blank prompt always forces a fresh manual master (the clarify/touch-up
+   // chaining only makes sense when there's actual prompt text to fold in).
+   if (!noPrompt && mAwaitingClarify && sameTrackAsLastRun && !mPendingInputWav.IsEmpty() && wxFileExists(mPendingInputWav))
    {
       inputWav = mPendingInputWav;
       effectivePrompt = mHistory + wxT("\nFollow-up answer: ") + prompt;
    }
-   else if (!mAwaitingClarify && sameTrackAsLastRun && !mPendingInputWav.IsEmpty() && wxFileExists(mPendingInputWav))
+   else if (!noPrompt && !mAwaitingClarify && sameTrackAsLastRun && !mPendingInputWav.IsEmpty() && wxFileExists(mPendingInputWav))
    {
       inputWav = mPendingInputWav;
       effectivePrompt = wxT("This audio has already been mixed/mastered once by an earlier "
@@ -459,7 +475,9 @@ void HgeAiChat::OnApply(wxCommandEvent &WXUNUSED(evt))
       inputWav = ExportSelectedTrackToWav();
       mPendingInputWav = inputWav;
       mLastTrackName = currentTrackName;
-      effectivePrompt = prompt;
+      effectivePrompt = prompt;   // empty when noPrompt -> ai_mix.py does a no-AI manual master
+      if (noPrompt)
+         Log(wxT("(no prompt — mastering with your settings only)"));
    }
 
    wxString skillFile;

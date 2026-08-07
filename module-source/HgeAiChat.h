@@ -69,6 +69,7 @@ private:
    wxChoice   *mEqStyleChoice;
    wxChoice   *mCompressionChoice;
    wxChoice   *mSaturationChoice;
+   wxChoice   *mLimiterChoice;
 
    // Builds the --target-lufs/--true-peak/--eq-style/--compression/
    // --saturation CLI flags for ai_mix.py from the current dropdown

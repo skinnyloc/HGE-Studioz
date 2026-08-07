@@ -53,6 +53,57 @@ copied into `module-source/`, and `rebuild-full.sh` got two new `add_file` lines
   ad-hoc-signed, repeatedly-recopied bundle was never indexed. Ran `lsregister -f
   /Applications/HgeMusicStudio.app` to register it. Search "HgeMusicStudio" (one word).
 
+## DONE + VERIFIED (2026-08-07 ~1am) — optional prompt + EQ Off + Limiter toggle
+Van tested the chat and it mastered a real song great; asked for 3 tweaks. All done,
+built, verified, installed:
+1. **Prompt is now OPTIONAL.** Leaving the prompt box blank + Apply runs a master using
+   ONLY the Mastering Settings panel — and `ai_mix.py` skips the AI call entirely
+   (deterministic, instant, free). `HgeAiChat::OnApply` no longer blocks on an empty
+   prompt; a blank prompt forces a fresh manual master (bypasses clarify/touch-up
+   chaining, which only make sense with prompt text). `ai_mix.py`: `--prompt` is now
+   optional (default ""); blank → base plan = the loaded saved-skill if one is selected,
+   else a clean transparent master (no EQ/comp/warmth, -14 LUFS), then apply_overrides
+   layers the manual picks on top.
+2. **EQ "Off (no EQ)"** — new dropdown option (index 1). Maps to `--eq-style off`
+   (EQ_STYLE_PRESETS["off"] = [] → no EQ bands). (Note: "Natural" is also [] under the
+   hood; "Off" is the clearer label Van asked for.)
+3. **Limiter On/Off** — new dropdown in the Mastering Settings group next to True Peak.
+   Default **On** (index 0; that's the behavior that gave Van the good master). Off skips
+   the `alimiter` stage. `ai_mix.py`: `--limiter on|off`, `build_filter_chain` gates the
+   limiter on `plan.get("limiter", True)`, `apply_overrides` sets it. HgeAiChat always
+   passes `--limiter on|off` explicitly (so a saved skill can't silently flip it).
+
+**ai_mix.py deploy note:** the app does NOT bundle ai_mix.py — `FindAiMixScript()` falls
+through to the dev path `~/HgeMusicStudio/ai_mix_assistant/ai_mix.py`, so edits to that
+file are LIVE immediately for Van's installed build (no re-copy). Bundling it is still a
+SELLABLE-build task (see blockers below).
+
+**Verified:** `ai_mix.py` parses; ran the no-prompt path on a real WAV — confirmed NO AI
+call (`notes:"manual master (no prompt)"`), EQ-off + limiter-off + limiter-on all produce
+valid output hitting -14 LUFS. C++ rebuild exit 0 / 0 errors; UTF-32 scan confirms all 6
+new strings ("Off (no EQ)", "Limiter:", "On (hit the true-peak ceiling)", "Off (no
+limiter)", "no prompt", "mastering with your settings only") in the built .so;
+/Applications refreshed; relaunched clean, module maps into the live PID, no crash.
+**Not click-tested on screen** — Van should try: blank prompt + Apply, EQ Off, Limiter Off.
+
+## Landing page for the sellable version — BUILT LOCAL (agent, 2026-08-07, NOT deployed)
+Built ahead of schedule (Van asked, while he sources plugins) inside the Hub repo
+`~/Downloads/HGE Community Hub/`. **Local + unstaged only — nothing committed/pushed/
+deployed.** New public route **`/music-studio`** (also `/product/app-hge-music-studio`).
+New minimal `Product` type `"desktop"` (threaded like `template` was, so a downloadable
+macOS app doesn't get treated like an in-browser `/apps/*` iframe app). Download gated by
+`isPremium` (members free + updates; non-members → /pricing; a disabled "Buy once — coming
+soon" button is stubbed beside it for a future one-time flow). Placeholders left: `HGE_
+MUSIC_STUDIO_DMG_URL=""`, `HGE_MUSIC_STUDIO_BUY_URL=""`, `APP_VERSION="1.0"`, and every
+screenshot tile marked TODO (no fake UI shots — brand-gradient placeholders). `npm run
+build` exit 0. Agent also fixed a latent `template`-key crash in Products.tsx META_SLIM.
+**4 questions waiting on Van before Phase 3 goes live:** (1) route `/music-studio` vs
+`/apps/hge-music-studio`? (2) non-members → /pricing or /login first? (3) real min macOS
+version + chips + shipping version #? (4) keep `featured:true` (shows in homepage/Products
+carousels) or keep it quiet until the DMG is live? Files: `src/pages/MusicStudioLanding
+.tsx` (+ cover png) new; `products.ts`/`types/index.ts`/`ProductCard`/`ProductDetail`/
+`Products`/`AdminProducts`/`prerender-og.mjs`/`App.tsx` changed.
+
 ## ⭐ SELLABLE PRODUCT ROADMAP (planned 2026-08-06 — BUILD LATER, IN THIS ORDER)
 Van's plan for turning HGE Music Studio into a product sold/distributed through
 hgediscord.com. **Nothing here is built yet — this is the locked plan.** Do the phases

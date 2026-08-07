@@ -110,6 +110,14 @@ same `SYSTEM_PROMPT`, now grounded in distilled PlatinumForge mixing/mastering
 knowledge (LUFS-by-destination, vocal chain order, preset deltas — condensed to stay
 token-cheap for BYOK clients, not pasted verbatim from the skill files).
 
+**Optional prompt + EQ Off + Limiter toggle (2026-08-07 ~1am) — DONE + VERIFIED, see
+SAVE_PROGRESS.md top.** Prompt box is now OPTIONAL — blank + Apply masters from the
+settings panel only and `ai_mix.py` skips the AI call entirely (deterministic/free).
+Added EQ "Off (no EQ)" and a Limiter On/Off dropdown (default On). ai_mix.py: `--prompt`
+optional, `--limiter on|off`, EQ_STYLE_PRESETS["off"]. NOTE: app runs ai_mix.py from the
+DEV PATH (`~/HgeMusicStudio/ai_mix_assistant/ai_mix.py`), not a bundled copy — .py edits
+are live for Van's build instantly; bundling it is a sellable-build task.
+
 **Settings button + Rename/Remove skills + MANUAL TWEAKS grouping (2026-08-06
 ~11:46pm) — DONE and VERIFIED, see SAVE_PROGRESS.md top section.** This was the batch
 that timed out mid-edit; finished it. In-app `HgeAiChat` now has: a "Settings..."
