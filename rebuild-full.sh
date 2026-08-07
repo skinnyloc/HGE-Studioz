@@ -30,7 +30,7 @@ set -euo pipefail
 
 # ─── Configuration ─────────────────────────────────────────────────────────
 HGE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-AUDACITY_SRC="/Users/homegrownentllc/Documents/VSCODE/HGE MUSIC STUDIO/audacity-3.7.7"
+AUDACITY_SRC="/Users/homegrownentllc/HgeMusicStudio/audacity-3.7.7"
 BUILD_DIR="$AUDACITY_SRC/build-vst3"
 MODULE_SRC="$HGE_DIR/module-source"
 
@@ -149,14 +149,15 @@ def patch_vst3(src):
         '     }\n'
         '  }\n'
     )
-    marker = '// Check for VST3_PATH environment variable'
-    if marker in content:
-        content = content.replace(marker, block + '  ' + marker, 1)
+    # Insert inside FindModulePaths(), after custom paths are appended to
+    # pathList and before the traversal loop — must be function-scope code,
+    # never dropped at file scope (that fails to compile).
+    anchor = 'std::copy(customPaths.begin(), customPaths.end(), std::back_inserter(pathList));\n   }\n'
+    if anchor in content:
+        content = content.replace(anchor, anchor + block, 1)
     else:
-        content = content.replace(
-            '#include <wx/tokenzr.h>',
-            '#include <wx/tokenzr.h>\n' + block, 1
-        )
+        print("  ⚠️  Could not find safe anchor point for VST3_PATH patch; skipping (manual patch needed)")
+        return False
     safe_write(src, content)
     print("  ✅ VST3_PATH patched")
     return True
@@ -240,6 +241,16 @@ add_file "HgeEffectBrowser.h" "HgeEffectBrowser.h"
 add_file "HgeEffectBrowser.cpp" "HgeEffectBrowser.cpp"
 add_file "HgeEffectModule.h" "HgeEffectModule.h"
 add_file "HgeEffectModule.cpp" "HgeEffectModule.cpp"
+add_file "HgeAiChat.h" "HgeAiChat.h"
+add_file "HgeAiChat.cpp" "HgeAiChat.cpp"
+add_file "HgeAiSettings.h" "HgeAiSettings.h"
+add_file "HgeAiSettings.cpp" "HgeAiSettings.cpp"
+# Kept local to the module (not in libraries/) because CMake's source_group
+# requires all module SOURCES to live under the module's own directory.
+add_file "PluginCategoryManager.h" "PluginCategoryManager.h"
+add_file "PluginCategoryManager.cpp" "PluginCategoryManager.cpp"
+add_file "PluginDisplayName.h" "PluginDisplayName.h"
+add_file "PluginDisplayName.cpp" "PluginDisplayName.cpp"
 add_file "modules__plugin-manager__mod-plugin-manager__CMakeLists.txt" "CMakeLists.txt"
 
 for ((i=0; i<${#FILE_SRC[@]}; i++)); do
@@ -252,6 +263,29 @@ for ((i=0; i<${#FILE_SRC[@]}; i++)); do
     echo "  ⚠️  Missing: $src_file"
   fi
 done
+
+# Wire the plugin-manager module into the build. Copying the files above is
+# not enough — CMake only descends into modules/plugin-manager if it has its
+# own CMakeLists.txt AND is listed in modules/CMakeLists.txt's FOLDERS.
+PLUGIN_MGR_CMAKE="$AUDACITY_SRC/modules/plugin-manager/CMakeLists.txt"
+if [ ! -f "$PLUGIN_MGR_CMAKE" ]; then
+  cp "$MODULE_SRC/modules__plugin-manager__CMakeLists.txt" "$PLUGIN_MGR_CMAKE"
+  echo "  ✅ modules/plugin-manager/CMakeLists.txt"
+fi
+
+MODULES_ROOT_CMAKE="$AUDACITY_SRC/modules/CMakeLists.txt"
+if [ -f "$MODULES_ROOT_CMAKE" ] && ! grep -q "plugin-manager" "$MODULES_ROOT_CMAKE"; then
+  python3 -c "
+import sys
+p = sys.argv[1]
+with open(p) as f:
+    c = f.read()
+c = c.replace('   sharing\n)', '   sharing\n   plugin-manager\n)', 1)
+with open(p, 'w') as f:
+    f.write(c)
+" "$MODULES_ROOT_CMAKE"
+  echo "  ✅ modules/CMakeLists.txt (added plugin-manager to FOLDERS)"
+fi
 
 # HGE UX/productization overlays for stock Audacity source paths.
 # These keep the creator startup template, HGE menu labels, hidden legacy
@@ -286,6 +320,70 @@ copy_overlay "src__tracks__playabletrack__wavetrack__ui__WaveTrackControls.h" "s
 copy_overlay "src__tracks__playabletrack__notetrack__ui__NoteTrackControls.cpp" "src/tracks/playabletrack/notetrack/ui/NoteTrackControls.cpp"
 copy_overlay "src__tracks__playabletrack__notetrack__ui__NoteTrackControls.h" "src/tracks/playabletrack/notetrack/ui/NoteTrackControls.h"
 
+# HGE branding — app name, About dialog, splash screen, app icon
+copy_overlay "libraries__lib-utility__ModuleConstants.cpp" "libraries/lib-utility/ModuleConstants.cpp"
+copy_overlay "src__AboutDialog.cpp" "src/AboutDialog.cpp"
+copy_overlay "images__AudacityLogoWithName.xpm" "images/AudacityLogoWithName.xpm"
+copy_overlay "images__Audacity-splash.xpm" "images/Audacity-splash.xpm"
+copy_overlay "mac__Resources__Audacity.icns" "mac/Resources/Audacity.icns"
+# Black & gold track/UI color theme
+copy_overlay "libraries__lib-theme__AllThemeResources.h" "libraries/lib-theme/AllThemeResources.h"
+# Neutered Help buttons (no more manual.audacityteam.org / support.audacityteam.org)
+copy_overlay "libraries__lib-wx-init__HelpSystem.cpp" "libraries/lib-wx-init/HelpSystem.cpp"
+copy_overlay "libraries__lib-wx-init__ErrorReportDialog.cpp" "libraries/lib-wx-init/ErrorReportDialog.cpp"
+# Window title default, Help menu (Quick Help/Manual/Audacity Support removed,
+# About renamed), Welcome-to-Audacity startup dialog disabled
+copy_overlay "libraries__lib-project-file-io__ProjectFileIO.cpp" "libraries/lib-project-file-io/ProjectFileIO.cpp"
+copy_overlay "src__menus__HelpMenus.cpp" "src/menus/HelpMenus.cpp"
+copy_overlay "src__AudacityApp.cpp" "src/AudacityApp.cpp"
+
+# Full branding sweep — every remaining reachable "Audacity" string found by
+# an independent audit (dialog titles, error messages, vendor/description
+# strings, Preferences panels, effect "get more" links, etc.)
+copy_overlay "src__widgets__MissingPluginsErrorDialog.cpp" "src/widgets/MissingPluginsErrorDialog.cpp"
+copy_overlay "src__TimerRecordDialog.cpp" "src/TimerRecordDialog.cpp"
+copy_overlay "src__AutoRecoveryDialog.cpp" "src/AutoRecoveryDialog.cpp"
+copy_overlay "libraries__lib-wx-init__LogWindow.cpp" "libraries/lib-wx-init/LogWindow.cpp"
+copy_overlay "src__toolbars__ToolBar.cpp" "src/toolbars/ToolBar.cpp"
+copy_overlay "src__MixerBoard.cpp" "src/MixerBoard.cpp"
+copy_overlay "src__AudacityFileConfig.cpp" "src/AudacityFileConfig.cpp"
+copy_overlay "src__AudacityMirProject.cpp" "src/AudacityMirProject.cpp"
+copy_overlay "src__effects__VST__VSTEffect.cpp" "src/effects/VST/VSTEffect.cpp"
+copy_overlay "src__Legacy.cpp" "src/Legacy.cpp"
+copy_overlay "libraries__lib-project-file-io__ProjectSerializer.cpp" "libraries/lib-project-file-io/ProjectSerializer.cpp"
+copy_overlay "libraries__lib-theme__Theme.cpp" "libraries/lib-theme/Theme.cpp"
+copy_overlay "libraries__lib-files__FileException.cpp" "libraries/lib-files/FileException.cpp"
+copy_overlay "libraries__lib-import-export__Import.cpp" "libraries/lib-import-export/Import.cpp"
+copy_overlay "libraries__lib-exceptions__InconsistencyException.cpp" "libraries/lib-exceptions/InconsistencyException.cpp"
+copy_overlay "libraries__lib-module-manager__ModuleManager.cpp" "libraries/lib-module-manager/ModuleManager.cpp"
+copy_overlay "libraries__lib-module-manager__ModuleSettings.cpp" "libraries/lib-module-manager/ModuleSettings.cpp"
+copy_overlay "src__prefs__ApplicationPrefs.cpp" "src/prefs/ApplicationPrefs.cpp"
+copy_overlay "src__prefs__KeyConfigPrefs.cpp" "src/prefs/KeyConfigPrefs.cpp"
+copy_overlay "src__prefs__ImportExportPrefs.cpp" "src/prefs/ImportExportPrefs.cpp"
+copy_overlay "src__prefs__TracksBehaviorsPrefs.cpp" "src/prefs/TracksBehaviorsPrefs.cpp"
+copy_overlay "src__prefs__PrefsDialog.cpp" "src/prefs/PrefsDialog.cpp"
+copy_overlay "src__menus__PluginMenus.cpp" "src/menus/PluginMenus.cpp"
+copy_overlay "src__PluginRegistrationDialog.cpp" "src/PluginRegistrationDialog.cpp"
+copy_overlay "src__effects__EqualizationCurvesDialog.cpp" "src/effects/EqualizationCurvesDialog.cpp"
+copy_overlay "libraries__lib-effects__LoadEffects.cpp" "libraries/lib-effects/LoadEffects.cpp"
+copy_overlay "libraries__lib-effects__Effect.cpp" "libraries/lib-effects/Effect.cpp"
+copy_overlay "libraries__lib-vst__VSTEffectsModule.cpp" "libraries/lib-vst/VSTEffectsModule.cpp"
+copy_overlay "libraries__lib-vst3__VST3EffectsModule.cpp" "libraries/lib-vst3/VST3EffectsModule.cpp"
+copy_overlay "libraries__lib-lv2__LoadLV2.cpp" "libraries/lib-lv2/LoadLV2.cpp"
+copy_overlay "libraries__lib-ladspa__LadspaEffectsModule.cpp" "libraries/lib-ladspa/LadspaEffectsModule.cpp"
+copy_overlay "libraries__lib-nyquist-effects__LoadNyquist.cpp" "libraries/lib-nyquist-effects/LoadNyquist.cpp"
+copy_overlay "libraries__lib-nyquist-effects__NyquistBase.cpp" "libraries/lib-nyquist-effects/NyquistBase.cpp"
+copy_overlay "libraries__lib-audio-unit__AudioUnitEffectsModule.cpp" "libraries/lib-audio-unit/AudioUnitEffectsModule.cpp"
+copy_overlay "src__effects__vamp__LoadVamp.cpp" "src/effects/vamp/LoadVamp.cpp"
+copy_overlay "src__commands__LoadCommands.cpp" "src/commands/LoadCommands.cpp"
+copy_overlay "src__commands__AudacityCommand.cpp" "src/commands/AudacityCommand.cpp"
+copy_overlay "libraries__lib-preference-pages__PrefsPanel.cpp" "libraries/lib-preference-pages/PrefsPanel.cpp"
+copy_overlay "libraries__lib-wx-init__HelpText.cpp" "libraries/lib-wx-init/HelpText.cpp"
+copy_overlay "libraries__lib-wave-track__Sequence.cpp" "libraries/lib-wave-track/Sequence.cpp"
+# File > Quit menu item, and a few last stragglers found by a final broad sweep
+copy_overlay "src__menus__FileMenus.cpp" "src/menus/FileMenus.cpp"
+copy_overlay "libraries__lib-audio-io__AudioIO.cpp" "libraries/lib-audio-io/AudioIO.cpp"
+
 # Copy plugin-aliases.xml to app support resources
 ALIASES_DEST="$AUDACITY_SRC/build-hge/Release/HgeMusicStudio.app/Contents/Resources/plugin-aliases.xml"
 if [ -f "$MODULE_SRC/plugin-aliases.xml" ]; then
@@ -293,24 +391,6 @@ if [ -f "$MODULE_SRC/plugin-aliases.xml" ]; then
   cp "$MODULE_SRC/plugin-aliases.xml" "$ALIASES_DEST"
   echo "  ✅ plugin-aliases.xml"
 fi
-
-# Copy PluginCategoryManager and PluginDisplayName to libraries.
-# Keep both historical staging locations updated so the current rebuild
-# pipeline does not overwrite the HGE browser with an older API variant.
-LIBSRC="$AUDACITY_SRC/libraries/lib-plugin-category"
-mkdir -p "$LIBSRC"
-cp "$MODULE_SRC/PluginCategoryManager.h" "$LIBSRC/" 2>/dev/null || true
-cp "$MODULE_SRC/PluginCategoryManager.cpp" "$LIBSRC/" 2>/dev/null || true
-cp "$MODULE_SRC/PluginDisplayName.h" "$LIBSRC/" 2>/dev/null || true
-cp "$MODULE_SRC/PluginDisplayName.cpp" "$LIBSRC/" 2>/dev/null || true
-
-CURATION_LIBSRC="$AUDACITY_SRC/libraries/lib-plugin-curation"
-DISPLAY_LIBSRC="$AUDACITY_SRC/libraries/lib-plugin-display"
-mkdir -p "$CURATION_LIBSRC" "$DISPLAY_LIBSRC"
-cp "$MODULE_SRC/PluginCategoryManager.h" "$CURATION_LIBSRC/" 2>/dev/null || true
-cp "$MODULE_SRC/PluginCategoryManager.cpp" "$CURATION_LIBSRC/" 2>/dev/null || true
-cp "$MODULE_SRC/PluginDisplayName.h" "$DISPLAY_LIBSRC/" 2>/dev/null || true
-cp "$MODULE_SRC/PluginDisplayName.cpp" "$DISPLAY_LIBSRC/" 2>/dev/null || true
 
 # ── Step 3: Verify build environment ─────────────────────────────────────
 echo ""
@@ -351,6 +431,10 @@ CMAKE_FLAGS=(
   -Daudacity_has_vst2=ON
   -Daudacity_has_lv2=ON
   -Daudacity_has_audiocom=OFF
+  # CRITICAL: the stock updater will download and install the REAL Audacity
+  # over this rebrand (checks updates.audacityteam.org, shows an "Install
+  # Audacity 4" promo, runs the downloaded installer) — must stay off.
+  -Daudacity_has_updates_check=OFF
   -Daudacity_conan_enabled=ON
   -Daudacity_conan_allow_prebuilt_binaries=ON
   # No custom profiles — conan_runner.py auto-generates them with correct Clang version
@@ -387,10 +471,38 @@ echo "════════════════════════�
 echo "  This takes 5-15 minutes on Apple Silicon..."
 echo ""
 
-cmake --build "$BUILD_DIR" --target HgeMusicStudio -- -j$(sysctl -n hw.ncpu) \
+# No --target: build the default "all" target so every module (mod-mp3,
+# mod-flac, mod-script-pipe, mod-plugin-manager, etc.) gets compiled too —
+# "--target Audacity" only builds the main app and skips every module dylib.
+cmake --build "$BUILD_DIR" -- -j$(sysctl -n hw.ncpu) \
   2>&1 | sed 's/^/     /'
 
 echo "  ✅ Build complete"
+
+# ── Step 5b: Rename bundle to HgeMusicStudio.app ──────────────────────────
+# Note: the CMake target/executable stays "Audacity" internally (renaming it
+# would mean threading changes through the whole build system). Wrapper.c
+# is told via AUDACITY_BUNDLE_EXECUTABLE to exec the "Audacity" binary, so
+# only the outer .app folder + Info.plist branding need to change.
+echo ""
+echo "═══════════════════════════════════════════════════════════════"
+echo "  STEP 5b: Renaming bundle to HgeMusicStudio.app"
+echo "═══════════════════════════════════════════════════════════════"
+
+# COPY (never move/rename) Audacity.app — CMake/Make's incremental build
+# tracking keys off that exact path. If it gets renamed away, the next
+# incremental build silently skips re-copying Contents/Frameworks (the main
+# binary still relinks fine, so this is easy to miss: app builds, launches
+# once, then dyld-fails on every framework dependency on the next rebuild).
+RAW_APP="$BUILD_DIR/Release/Audacity.app"
+APP="$BUILD_DIR/Release/HgeMusicStudio.app"
+rm -rf "$APP"
+cp -R "$RAW_APP" "$APP"
+
+plutil -replace CFBundleName -string "HGE Music Studio" "$APP/Contents/Info.plist"
+plutil -replace CFBundleDisplayName -string "HGE Music Studio" "$APP/Contents/Info.plist"
+plutil -replace CFBundleIdentifier -string "com.hgemusicstudio.HgeMusicStudio" "$APP/Contents/Info.plist"
+echo "  ✅ Bundle renamed + Info.plist rebranded"
 
 # ── Step 6: Rebuild Wrapper ───────────────────────────────────────────────
 echo ""
@@ -398,9 +510,8 @@ echo "════════════════════════�
 echo "  STEP 6: Rebuilding Wrapper"
 echo "═══════════════════════════════════════════════════════════════"
 
-APP="$BUILD_DIR/Release/HgeMusicStudio.app"
 /usr/bin/cc \
-  -DAUDACITY_BUNDLE_EXECUTABLE=\"HgeMusicStudio\" \
+  -DAUDACITY_BUNDLE_EXECUTABLE=\"Audacity\" \
   -O3 -arch arm64 \
   -isysroot /Library/Developer/CommandLineTools/SDKs/MacOSX.sdk \
   -mmacosx-version-min=10.15 \
@@ -504,7 +615,7 @@ echo "════════════════════════�
 echo ""
 echo "  Architecture:"
 file "$HGE_APP/Contents/MacOS/Wrapper" | sed 's/^/    /'
-file "$HGE_APP/Contents/MacOS/HgeMusicStudio" | sed 's/^/    /'
+file "$HGE_APP/Contents/MacOS/Audacity" | sed 's/^/    /'
 
 echo ""
 echo "  VST2 plugins:"
@@ -524,7 +635,7 @@ du -sh "$HGE_APP" | sed 's/^/    /'
 
 echo ""
 echo "  VST3 support in binary:"
-if strings "$HGE_APP/Contents/MacOS/HgeMusicStudio" | grep -q "VST3"; then
+if strings "$HGE_APP/Contents/MacOS/Audacity" | grep -q "VST3"; then
   echo "    ✅ VST3 symbols present"
 else
   echo "    ⚠️  No VST3 symbols found"
