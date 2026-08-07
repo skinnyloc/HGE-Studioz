@@ -157,6 +157,20 @@ pass of careful, patient testing (not mid-heavy-rebuild-churn) before trusting i
 
 See `SAVE_PROGRESS.md` for exact next steps / where this was paused.
 
+## ⭐ SELLABLE PRODUCT ROADMAP — see SAVE_PROGRESS.md top ("SELLABLE PRODUCT ROADMAP")
+Van's plan to sell/distribute HGE Music Studio through hgediscord.com. Phased, BUILD
+IN ORDER, gated on Van signing off his personal build first (Phase 0). Phases:
+0) prove personal build (add plugins + click-test AI) → 1) multi-provider AI keys
+(Claude+DeepSeek+OpenAI, incl. Van's own DeepSeek backup) → 2) in-app "Check for
+Updates" + "About HGE Studio" button → hgediscord.com → 3) gated landing/download page
+on the site (members download free + updates; recommend paid-members-only MVP since the
+site only has subscription PayPal today) → 4) promo/ads. Three decisions still owed by
+Van: access model, which providers, personal default provider order. Site repo =
+`~/Downloads/HGE Community Hub/` (its own JARVIS_BRAIN.md/MEMORY.md — read first; auth
+can't be tested on localhost, CORS prod-only; PayPal only per [[feedback_no_stripe]]).
+**In progress (2026-08-06 night):** Phase-3 landing page being built in the Hub repo in
+parallel while Van sources plugins + tests — LOCAL only, not deployed.
+
 ## Known gotchas
 - Van is on a very slow/flaky pattern where `~/Documents` operations can hang — never read,
   write, or `mv` into Documents for this project.

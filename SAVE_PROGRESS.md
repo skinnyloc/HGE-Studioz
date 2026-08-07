@@ -53,6 +53,81 @@ copied into `module-source/`, and `rebuild-full.sh` got two new `add_file` lines
   ad-hoc-signed, repeatedly-recopied bundle was never indexed. Ran `lsregister -f
   /Applications/HgeMusicStudio.app` to register it. Search "HgeMusicStudio" (one word).
 
+## ⭐ SELLABLE PRODUCT ROADMAP (planned 2026-08-06 — BUILD LATER, IN THIS ORDER)
+Van's plan for turning HGE Music Studio into a product sold/distributed through
+hgediscord.com. **Nothing here is built yet — this is the locked plan.** Do the phases
+IN ORDER; do not jump ahead to the sellable/client work until Phase 0 is signed off by
+Van on his own machine. Cross-refs: site = memory `project_hge_community_hub`
+(hgediscord.com, self-hosted Supabase auth+RLS on VPS 74.208.92.43, PayPal LIVE, admin
+vansworld1987@gmail.com); unsigned-distribution pattern = memory `project_hge_privacy`
+(shipped unsigned DMG + README gatekeeper-bypass, per-buyer keys). PayPal only — Van is
+banned from Stripe (memory `feedback_no_stripe`).
+
+### PHASE 0 — Prove the PERSONAL build (Van, NOW; gates everything else)
+- Add more plugins (Van is sourcing them), rebuild, confirm they load.
+- Full click-test of the AI chat: pick LUFS/True-Peak + manual tweaks, run a
+  master/pre-master, re-prompt to touch up the result, Save a Skill, re-select it,
+  Rename it, Remove it, open Settings. Confirm on a real vocal it sounds right.
+- ✅ EXIT CRITERIA: Van says "my version works." Only then → Phase 1.
+
+### PHASE 1 — Multi-provider AI keys (Claude + DeepSeek + OpenAI)
+Why: clients should be able to run the chatbot on THEIR OWN key from whatever provider
+they have; Van wants his own DeepSeek key wired as a backup on his personal build too.
+- Extend `ai_mix.py`: abstract the "ask the model for a mix plan" call behind a provider
+  switch — `anthropic` (current: Claude CLI personal OR Anthropic API BYOK),
+  `deepseek` (OpenAI-compatible chat completions endpoint), `openai` (chat completions).
+  All three just need to return the same mix-plan JSON the rest of the pipeline already
+  consumes — the ffmpeg apply stage doesn't change.
+- Extend `HgeAiSettings` dialog: add a "AI Provider" dropdown (Claude / DeepSeek /
+  OpenAI) + the matching key field(s). Store `{provider, anthropic_api_key,
+  deepseek_api_key, openai_api_key, model, think}` in ai_mix_config.json. `ai_mix.py`
+  reads provider → picks the right key.
+- Van's personal build: pull his existing DeepSeek key (he has balance history across
+  projects — see memories `project_overmind`/`project_hge_hands`) and set it as the
+  backup provider. DECISION NEEDED: default provider order on Van's build
+  (Claude subscription first, DeepSeek fallback?).
+- ⚠️ Don't paste any real key into a repo-tracked file — keys live only in
+  ai_mix_config.json under ~/Library/Application Support (gitignored territory).
+
+### PHASE 2 — In-app "Check for Updates" + "About HGE Studio → site"
+- The **About HGE Studio** button (the one in Van's screenshot) should open the
+  hgediscord.com landing section for the app (Phase 3), not the stock About text.
+- Add a **Check for Updates** action: app reads its own version, fetches a small
+  `hge-music-studio-latest.json` hosted on the VPS (version, dmg URL, release notes),
+  compares, and if newer tells the user + opens the download page. RECOMMENDED: start
+  with "notify + open site to download the new DMG" (simple, safe for an unsigned app);
+  true in-app auto-download+install comes later (macOS unsigned auto-update is painful —
+  gatekeeper). Pattern reference: the self-update JSON approach in the
+  `android-apk-forge` skill, adapted for a macOS DMG.
+
+### PHASE 3 — Landing page + gated download/store on hgediscord.com
+- A promoted product section/page on the site: pitch, screenshots, feature list
+  (AI mixing/mastering chat, skills, bundled pro plugins), price, buy/download CTA.
+- Gating (ties into the site's existing Supabase auth + PayPal):
+  DECISION NEEDED — pick the access model:
+    (A) Paid-members-only download (drives memberships), OR
+    (B) Hybrid: paid members download free + get free updates; non-members can buy it
+        one-time; either way must be a signed-up site account.
+  RECOMMENDED: (B) hybrid — widest funnel, and "free updates while you're a member" is a
+  strong retention hook. Members = free + updates; one-time buyers = the app + updates
+  for that version line.
+- Host the DMG + the version JSON on the VPS (same 74.208.92.43 /var/www pattern the
+  DisputePro live site uses — memory `project_disputepro`).
+
+### PHASE 4 — Promo / ads
+- Only after Phase 3 is live and the buy/download flow is confirmed working end-to-end.
+
+### Still-open sellable-packaging blockers (pre-existing, from task 6 below)
+- Buyers won't have ffmpeg/python — bundle a portable ffmpeg + freeze ai_mix.py
+  (PyInstaller) into the app, OR document a Homebrew install step (worse UX).
+- Unsigned/ad-hoc-signed app → gatekeeper warning on buyer machines; reuse the
+  HGE-Privacy unsigned + README-bypass approach, or pay for notarization.
+
+### The three real DECISIONS to get from Van before building Phase 1+:
+1. Access model: paid-members-only (A) vs hybrid buy-or-member (B, recommended).
+2. Providers to support for the client chatbot: Claude + DeepSeek + OpenAI (all three?).
+3. Van's personal default provider order (Claude sub first, DeepSeek backup?).
+
 ---
 ## (earlier save below — kept for history)
 
